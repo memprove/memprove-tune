@@ -1,0 +1,17 @@
+#!/bin/sh
+# A fake `command` agent for the adapter tests:
+#   command-agent <prompt file> <workdir> [<exit code> | bad-usage]
+# It checks that the placeholders and the variables agree, copies the
+# prompt into the worktree, writes a usage file, and exits as asked.
+printf 'arg: %s\n' "$@" >&2
+[ "$1" = "$TUNE_PROMPT_FILE" ] || { echo "prompt file: $1 != $TUNE_PROMPT_FILE" >&2; exit 90; }
+[ "$2" = "$TUNE_WORKDIR" ] || { echo "workdir: $2 != $TUNE_WORKDIR" >&2; exit 91; }
+[ "$(pwd -P)" = "$(cd "$2" && pwd -P)" ] || { echo "cwd: $(pwd) != $2" >&2; exit 92; }
+cp "$1" seen-prompt.md
+echo "model=${TUNE_MODEL-unset}"
+if [ "$3" = "bad-usage" ]; then
+    echo '{"cost_usd": 0.0031}' > "$TUNE_USAGE_FILE"
+    exit 0
+fi
+echo '{"input_tokens": 120, "output_tokens": 45, "cost_microusd": 3100, "turns": 3}' > "$TUNE_USAGE_FILE"
+exit "${3:-0}"

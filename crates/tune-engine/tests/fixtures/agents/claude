@@ -1,0 +1,32 @@
+#!/bin/sh
+# A fake `claude` for the adapter tests. It prints its arguments and the
+# session variables it got to standard error, then acts on the prompt (the
+# last argument). The default replays claude-result.json, the standard
+# output of a real `claude -p --output-format json` run (Claude Code
+# 2.1.325, prompt "Create a file named ok.txt containing ok", session_id
+# and uuid replaced).
+here=$(cd "$(dirname "$0")" && pwd)
+if [ "$1" = "--version" ]; then
+    echo "2.1.325 (Claude Code)"
+    exit 0
+fi
+for arg in "$@"; do printf 'arg: %s\n' "$arg" >&2; done
+env | grep -E '^(CLAUDE|MEMPROVE|CONTINUITY|CODEX|TRACEPARENT|ENGINE_TEST_|TUNE_|ANTHROPIC_|SSH_AUTH_SOCK|GITHUB_TOKEN|LC_ALL)' | sed 's/^/env: /' >&2
+for prompt in "$@"; do :; done
+case "$prompt" in
+    garbage*)
+        echo "I made the change."
+        ;;
+    error*)
+        printf '%s\n' '{"type":"result","subtype":"error_max_turns","is_error":true,"num_turns":2,"total_cost_usd":0.01,"usage":{"input_tokens":3,"output_tokens":9}}'
+        exit 1
+        ;;
+    hang\ *)
+        (sleep 2; touch "${prompt#hang }") &
+        sleep 30
+        ;;
+    *)
+        echo ok > ok.txt
+        cat "$here/claude-result.json"
+        ;;
+esac

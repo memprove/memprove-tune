@@ -1,0 +1,28 @@
+#!/bin/sh
+# A fake `codex` for the adapter tests, like ./claude. The default replays
+# codex-events.jsonl, written from the `codex exec --json` sample of the
+# Codex documentation (non-interactive mode) and the event types of
+# codex-rs/exec/src/exec_events.rs at openai/codex 81b995a; no real Codex
+# output was available.
+here=$(cd "$(dirname "$0")" && pwd)
+if [ "$1" = "--version" ]; then
+    echo "codex-cli 0.169.0"
+    exit 0
+fi
+for arg in "$@"; do printf 'arg: %s\n' "$arg" >&2; done
+env | grep -E '^(CLAUDE|MEMPROVE|CONTINUITY|CODEX|TRACEPARENT|ENGINE_TEST_|TUNE_|ANTHROPIC_|SSH_AUTH_SOCK|GITHUB_TOKEN|LC_ALL)' | sed 's/^/env: /' >&2
+echo "Reading additional input from stdin..." >&2
+for prompt in "$@"; do :; done
+case "$prompt" in
+    fail*)
+        printf '%s\n' \
+            '{"type":"thread.started","thread_id":"0199a213-81c0-7800-8aa1-bbab2a035a53"}' \
+            '{"type":"turn.started"}' \
+            '{"type":"turn.failed","error":{"message":"stream disconnected before completion"}}'
+        exit 1
+        ;;
+    *)
+        echo ok > ok.txt
+        cat "$here/codex-events.jsonl"
+        ;;
+esac
