@@ -1,8 +1,8 @@
 # tune: one-page spec (stages 1 and 2)
 
 `tune` is a working name. Scope of this page: what stages 1 (`scan`, `ab`)
-and 2 (`prune`, the verdict file) built, the decisions in them, and what
-is left out.
+and 2 (`prune`, the verdict file, `init` for the first tasks) built, the
+decisions in them, and what is left out.
 
 ## What it is for
 
@@ -29,9 +29,11 @@ repository's own checks.
 | `tune scan [--json]` | Units, their token cost, findings, and the verdicts on file with whether each still holds. Runs nothing. |
 | `tune ab ...` | Baseline, control and variants on the task files; report as text or JSON. |
 | `tune prune ...` | Every unit dropped alone, the removable ones dropped together and checked, a patch and the verdict file; report as text or JSON. |
+| `tune init ...` | Task files from the repository's history: a commit that changed a test and code becomes a task. Calls no model. |
 | `tune apply --files DIR [--hide LIST]` | Internal: the setup command every trial starts with. |
 
-Later: `check` and `init` (public release), `optimize` (v2).
+Later: `check`, and the rest of `init` (a starting configuration, the
+onboarding skill) for the public release; `optimize` (v2).
 
 ## Decisions
 
@@ -114,6 +116,25 @@ Later: `check` and `init` (public release), `optimize` (v2).
   is one unit named by its path) keeps its verdict, because the verdict is
   about the text.
 
+### `init` (the first tasks)
+
+- **Copied, not written again.** Mining is memprove-eval's `mine`, taken
+  into `tune-engine` with names changed (`PROVENANCE.md`); `tune init` is
+  its command line. Tasks go to `.tune/tasks`, where `ab` and `prune` look
+  first.
+- **What becomes a task.** A commit that is not a merge and changed a test
+  file and other code, in at most 20 files and 600 lines. Base = its
+  parent, prompt = its message without trailers, check = the detected test
+  command narrowed to the changed tests, hidden tests = the commit's diff
+  of its test files.
+- **`--verify` is optional and free of model cost.** It runs setup and
+  check in two worktrees per task and keeps a task only when the check
+  fails before the commit and passes after it. Without it the report says
+  that the tasks were not run.
+- **Old commits, today's configuration.** A mined task starts from a
+  commit that may be older than the configuration; the experiment lays
+  today's configuration over it, as for any task.
+
 ## Known limits
 
 - Claude Code only for real runs; Codex and MCP servers as units are v2.
@@ -141,6 +162,12 @@ Later: `check` and `init` (public release), `optimize` (v2).
 - There is no early stop: a unit that is plainly needed still gets all its
   rounds.
 - Token counts are estimates.
+- A mined prompt is a commit message. It can say too little to do the
+  work from, and then no arm passes the task. `init` says so; nothing
+  checks it.
+- `init` guesses one test command for the repository (Cargo, npm, pytest,
+  go, make). A repository with several, or with none of these, needs task
+  files written by hand.
 - `scan` findings are heuristics. They prefer saying nothing to saying
   something wrong, so they miss things.
 

@@ -5,6 +5,11 @@ your repository, and a command that says whether it did it. Good tasks are
 things the repository really needed: a bug that was fixed, a small feature
 that was added, each with the test that proves it.
 
+`tune init` writes the first task files from your history (a commit that
+changed a test and code becomes a task); `tune init --verify` keeps only
+those whose check fails before the commit and passes after it. Read what it
+wrote, and add tasks by hand for work the history does not show.
+
 Put task files under `.tune/tasks/` (or pass `--tasks PATH`). One JSON file
 per task:
 

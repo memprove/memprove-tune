@@ -8,6 +8,7 @@ mod cli;
 mod error;
 mod experiment;
 mod files;
+mod init;
 mod ledger;
 mod markdown;
 mod patch;

@@ -9,7 +9,7 @@ use crate::{
     apply,
     error::Error,
     experiment::{self, Options},
-    prune, scan, stats,
+    init, prune, scan, stats,
     variant::{Change, Variant},
 };
 
@@ -38,7 +38,50 @@ Usage:
       (.tune/prune.patch) and what was found (.tune/verdicts.json).
       See `tune prune --help`.
 
+  tune init [--limit N] [--verify] [--dry-run]
+      Write the first task files from the repository's own history: a
+      commit that changed a test and code becomes a task.
+      See `tune init --help`.
+
   tune --help | --version
+";
+
+/// What `tune init --help` prints.
+pub(crate) const INIT_HELP: &str = "\
+tune init writes task files from the repository's own history, so that
+`tune ab` and `tune prune` have something to judge with. It looks at the
+commits, newest first, and takes each one that is not a merge and changed
+a test file and other code, in at most 20 files and 600 lines. The task
+starts from the commit's parent, its prompt is the commit message, and its
+check is the repository's test command, narrowed to the tests the commit
+changed where that can be done. The commit's tests are kept as the task's
+hidden tests: the agent never sees them.
+
+Options:
+  --limit N                at most N tasks (default 10)
+  --range GIT_RANGE        only these commits, as `git log` takes them, for
+                           example v1.0..HEAD (default: the history of HEAD)
+  --out DIR                where the task files go, from the repository
+                           root (default: .tune/tasks)
+  --verify                 keep a task only when its check fails before
+                           the commit and passes after it; runs the
+                           repository's tests twice for each task, calls
+                           no model and costs nothing but time
+  --dry-run                list what would be written and write nothing
+  --json                   print the report as JSON
+
+A task file that is already there is never written again. The test
+command is guessed from Cargo.toml, package.json, pyproject.toml, go.mod
+or a Makefile with a test target; when there is none, write the task
+files by hand. One holds a prompt and a check command:
+
+  {\"schema\": \"tune.task.v1\",
+   \"prompt\": \"Round parcel weights up to the next 100 g.\",
+   \"check\": {\"argv\": [\"npm\", \"test\"], \"timeout_secs\": 300}}
+
+Read the prompts of the tasks it writes: a commit message can say too
+little to do the work from, and a task no agent can pass tells nothing
+about the configuration.
 ";
 
 /// What `tune ab --help` prints.
@@ -385,6 +428,35 @@ fn prune_command(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<(),
     prune::run(options, cwd, out)
 }
 
+fn init_command(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<(), Error> {
+    let mut options = init::Options {
+        limit: 10,
+        range: None,
+        out: None,
+        verify: false,
+        dry_run: false,
+        json: false,
+    };
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--help" | "-h" => return print(out, INIT_HELP),
+            "--limit" => options.limit = number(arg, &mut rest)? as usize,
+            "--range" => options.range = Some(value(arg, &mut rest)?),
+            "--out" => options.out = Some(value(arg, &mut rest)?.into()),
+            "--verify" => options.verify = true,
+            "--dry-run" => options.dry_run = true,
+            "--json" => options.json = true,
+            other => {
+                return Err(Error::Usage(format!(
+                    "`tune init` has no option `{other}`; `tune init --help` lists them"
+                )));
+            }
+        }
+    }
+    init::run(&options, cwd, out)
+}
+
 /// Runs the command `args` (without the program name) in `cwd`, writing
 /// what it reports to `out`.
 pub(crate) fn run(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<(), Error> {
@@ -398,6 +470,7 @@ pub(crate) fn run(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<()
         "scan" => scan_command(rest, cwd, out),
         "ab" => ab_command(rest, cwd, out),
         "prune" => prune_command(rest, cwd, out),
+        "init" => init_command(rest, cwd, out),
         "apply" => match rest {
             [flag, arm] if flag == "--files" => apply::apply(cwd, Path::new(arm), None),
             [flag, arm, hide, list] if flag == "--files" && hide == "--hide" => {

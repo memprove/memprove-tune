@@ -17,14 +17,17 @@
 #![forbid(unsafe_code)]
 
 pub mod agent;
+pub mod detect;
 mod error;
 pub mod git;
 pub mod json;
+pub mod mine;
 mod model;
 pub mod process;
 pub mod runner;
 pub mod strict_json;
 pub mod task;
+pub mod taskfile;
 pub mod time;
 pub mod workspace;
 

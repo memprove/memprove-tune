@@ -21,9 +21,17 @@ repository), taken on 2026-11-17:
 `workspace.rs`, `strict_json.rs`, and the tests of the runner, the agent
 adapters, the hidden answer and the JSON parser with their fixtures.
 
-Not copied: the `memprove eval` command line, baselines, reports, `init`,
-`mine`, and the memory probe. The experiment layer (`crates/tune`) has its
-own command line and reports.
+Taken in a second step, from the same commit, for `tune init`:
+`mine.rs`, `mine/{history,narrow,verify}.rs` and their test
+(`tests/u23_w4_mine.rs`, here `tests/mine.rs`); `init/detect.rs` as
+`detect.rs`; and from `init.rs` only what `mine` needs, as `taskfile.rs`:
+`render_task`, `setup_commands`, `slashed`, `detect_check` and the
+timeouts of a written task.
+
+Not copied: the `memprove eval` command line, baselines, reports, the rest
+of `init` (the smoke task, the workflow file, the templates), and the
+memory probe. The experiment layer (`crates/tune`) has its own command
+line and reports.
 
 ## What was changed in the copy
 
@@ -39,11 +47,20 @@ Names only, and the removal of the memory feature:
 | working copies in `$TMPDIR/memprove-eval-<run>` | `$TMPDIR/tune-<run>` |
 | trial commit author `memprove eval <eval@memprove.invalid>` | `tune <trial@tune.invalid>` |
 | message prefixes `memprove eval:`, `memprove-eval:` | `tune:` |
+| mined tasks go to `evals/` (`init::EVALS_DIR`) | `.tune/tasks/` (`taskfile::TASKS_DIR`) |
+| `--verify` worktrees and logs in `<git common dir>/memprove-eval/mine` | `<git common dir>/tune/mine` |
 
 Removed: `MemoryProbe`, `--memory pack`, the `memory*` members of `run.json`,
 the baseline schema, and `libtest_summary`. Every other line of logic is as
 it was, so a fix to isolation or to an agent adapter in one repository
 should be made in the other as well.
+
+In the mining code, besides the names: the message for a repository
+without a test command no longer points at `evals/README.md`;
+`history::MAX_FILES` and `history::MAX_LINES` are public, so that the
+command can say them; and `mine/verify.rs` passes `clear_env: false`, the
+field the environment change above added to `process::Invocation` (setup
+and check commands keep the caller's environment, as in the runner).
 
 Kept on purpose: `runner::AGENT_CONFIG_ENV` still points `MEMPROVE_CONFIG_DIR`
 at an empty directory for every agent, and `agent::REMOVED_ENV` still lists

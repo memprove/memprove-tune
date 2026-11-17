@@ -11,6 +11,10 @@
   together and checked on held-out tasks, `.tune/prune.patch` for
   `git apply`, and the verdicts in `.tune/verdicts.json`
   (`tune.verdicts.v1`); text and JSON (`tune.prune.v1`).
+- `tune init`: task files from the repository's history (the mining code
+  of memprove-eval, copied into the engine and renamed), with `--verify`
+  to keep only tasks that fail before their commit and pass after it;
+  text and JSON (`tune.init.v1`).
 - `tune scan` lists the verdicts on file and whether each still holds
   (`verdicts` in `tune.scan.v1`).
 - `--margin POINTS` for `ab` and `prune`: how much lower the pass rate may

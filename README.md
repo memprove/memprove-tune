@@ -16,9 +16,9 @@ own tests decide.
   before anything runs, and a run stops at the cap you set.
 - **Nothing leaves your machine** except what your agent itself sends.
 
-Status: early. `scan`, `ab` and `prune` work and are tested with scripted
-agents; the agent supported for real runs is Claude Code, and no real run
-has been made yet.
+Status: early. `scan`, `init`, `ab` and `prune` work and are tested with
+scripted agents; the agent supported for real runs is Claude Code, and no
+real run has been made yet.
 
 ## Build
 
@@ -48,9 +48,31 @@ or `AGENTS.md`, a file under `.claude/rules`, or a skill under
 
 ## Test whether a unit earns its place
 
-Write a few task files (see [docs/tasks.md](docs/tasks.md)): each is a
-prompt and a check command, taken from work your repository really needed.
-Then:
+A task is a prompt and a check command, taken from work your repository
+really needed. `tune init` writes the first ones from your history: a
+commit that changed a test and code becomes a task that starts from its
+parent, asks for what its message says, and is judged by its tests, which
+the agent never sees.
+
+```console
+$ tune init --verify
+2 tasks written to .tune/tasks:
+  mined-9e5fd15  lib: add five
+      check: make test
+  mined-c0c1fa6  lib: add two
+      check: make test
+1 commit was refused by --verify:
+  mined-285e1cb  lib: add four
+      the check exited 2 on the commit with the change, so the task cannot be passed (logs: .git/tune/mine/.../mined-285e1cb)
+Read the prompts before you trust them: each is a commit message, and it may say too little to do the work from.
+Next: `tune scan` lists the units of the configuration, and `tune prune --dry-run` shows the plan and its cost.
+```
+
+(The path of the logs is shortened here.)
+
+`--verify` runs each task's tests before and after its commit and keeps
+the ones that fail before and pass after; it calls no model. You can also
+write task files by hand (see [docs/tasks.md](docs/tasks.md)). Then:
 
 ```console
 $ tune ab --drop 'CLAUDE.md#style' --rounds 5 --max-cost 15 --cost-per-trial 0.11
