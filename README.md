@@ -53,7 +53,7 @@ Then:
 
 ```console
 $ tune ab --drop 'CLAUDE.md#style' --rounds 5 --max-cost 15 --cost-per-trial 0.11
-Experiment 09edc248eed4: 3 arms x 6 tasks x 5 rounds = 90 trials (0 done, 90 to run)
+Experiment 82837b287474: 3 arms x 6 tasks x 5 rounds = 90 trials (0 done, 90 to run)
   arms: baseline; control; without CLAUDE.md#style
   agent: claude-code
   estimated cost of what is left: $9.90 at $0.11 a trial; cap $15.00
@@ -63,13 +63,14 @@ Run it? [y/N]
 and, when it is done (this report is from a scripted agent):
 
 ```
-  ARM                           PASSED    RATE  COST/TRIAL  TOKENS/TRIAL  CONFIG TOKENS
-  baseline                       30/30  100.0%       $0.11         9,566             43
-  control                        30/30  100.0%       $0.11         9,566             43
-  without CLAUDE.md#style        30/30  100.0%       $0.11         9,486             22
+  ARM                         PASSED    RATE  COST/TRIAL  TOKENS/TRIAL  CONFIG TOKENS
+  baseline                     30/30  100.0%       $0.11         9,566             43
+  control                      30/30  100.0%       $0.11         9,566             43
+  without CLAUDE.md#style      30/30  100.0%       $0.11         9,486             22
 
 without CLAUDE.md#style vs baseline: 30 pairs (both passed 30, neither 0, only the baseline 0, only this arm 0)
   REMOVABLE: the agent passes as often without it (at most 9.5 points lower, 95% bound); each session carries about 21 fewer configuration tokens.
+  cost per trial: +0.0%
 control vs baseline (the same configuration twice): 30 pairs, 0 differ. A difference has to be larger than that to count.
 ```
 
