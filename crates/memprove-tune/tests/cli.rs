@@ -1,4 +1,4 @@
-//! The `tune` binary from the outside: `scan`, help and errors.
+//! The `memprove-tune` binary from the outside: `scan`, help and errors.
 
 use std::{
     fs,
@@ -39,7 +39,7 @@ fn repo(files: &[(&str, &str)]) -> tempfile::TempDir {
 }
 
 fn tune(dir: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_tune"))
+    Command::new(env!("CARGO_BIN_EXE_memprove-tune"))
         .args(args)
         .current_dir(dir)
         .output()
@@ -210,7 +210,11 @@ fn scan_outside_a_repository_fails_with_a_reason() {
     let dir = tempfile::tempdir().expect("tempdir");
     let output = tune(dir.path(), &["scan"]);
     assert_eq!(output.status.code(), Some(1));
-    assert!(stderr(&output).starts_with("tune: "), "{}", stderr(&output));
+    assert!(
+        stderr(&output).starts_with("memprove-tune: "),
+        "{}",
+        stderr(&output)
+    );
 }
 
 #[test]
@@ -219,11 +223,16 @@ fn help_version_and_wrong_usage() {
     let version = tune(dir.path(), &["--version"]);
     assert_eq!(
         stdout(&version),
-        format!("tune {}\n", env!("CARGO_PKG_VERSION"))
+        format!("memprove-tune {}\n", env!("CARGO_PKG_VERSION"))
     );
     let help = tune(dir.path(), &["--help"]);
     assert!(help.status.success());
-    for command in ["tune scan", "tune ab"] {
+    for command in [
+        "memprove-tune scan",
+        "memprove-tune ab",
+        "memprove-tune prune",
+        "memprove-tune init",
+    ] {
         assert!(stdout(&help).contains(command), "{}", stdout(&help));
     }
     let none = tune(dir.path(), &[]);
@@ -240,16 +249,30 @@ fn help_version_and_wrong_usage() {
 }
 
 #[test]
-fn nothing_it_prints_names_the_project_the_engine_came_from() {
+fn it_is_a_tool_of_its_own_that_leaves_memprove_alone() {
+    // The help says so, for a reader who knows memprove by name.
     let dir = sample();
-    for args in [
-        &["scan"][..],
-        &["scan", "--json"],
-        &["--help"],
-        &["ab", "--help"],
-    ] {
-        let output = tune(dir.path(), args);
-        let all = format!("{}{}", stdout(&output), stderr(&output)).to_lowercase();
-        assert!(!all.contains("memprove"), "{args:?}: {all}");
-    }
+    let help = stdout(&tune(dir.path(), &["--help"]));
+    assert!(help.contains("does not need memprove installed"), "{help}");
+
+    // A repository that uses memprove: what memprove keeps there is not
+    // configuration, changes nothing in the scan, and is left as it is.
+    let before = stdout(&tune(dir.path(), &["scan", "--json"]));
+    write(dir.path(), ".memprove/policy.rules", "deny rm -rf\n");
+    write(dir.path(), ".memprove/verify.json", "{}\n");
+    let output = tune(dir.path(), &["scan", "--json"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(stdout(&output), before);
+    assert!(!stdout(&tune(dir.path(), &["scan"])).contains(".memprove"));
+    assert_eq!(
+        fs::read_to_string(dir.path().join(".memprove/policy.rules")).expect("read"),
+        "deny rm -rf\n"
+    );
+    let mut kept: Vec<String> = fs::read_dir(dir.path().join(".memprove"))
+        .expect("dir")
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    kept.sort();
+    assert_eq!(kept, ["policy.rules", "verify.json"]);
 }

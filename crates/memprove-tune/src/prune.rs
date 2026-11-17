@@ -1,4 +1,4 @@
-//! `tune prune`: every unit dropped alone against today's configuration,
+//! `memprove-tune prune`: every unit dropped alone against today's configuration,
 //! then the units that are not needed dropped together and checked once
 //! more, a patch that removes them, and the verdicts written down.
 
@@ -29,15 +29,15 @@ use crate::{
     variant::{self, Change, Variant},
 };
 
-/// The schema of `tune prune --json`.
+/// The schema of `memprove-tune prune --json`.
 pub(crate) const PRUNE_SCHEMA: &str = "tune.prune.v1";
 
 /// Where the patch goes, from the repository root.
 pub(crate) const PATCH_PATH: &str = ".tune/prune.patch";
 
-/// What `tune prune` was asked to do.
+/// What `memprove-tune prune` was asked to do.
 pub(crate) struct Options {
-    /// What it shares with `tune ab`; `rounds` is set here.
+    /// What it shares with `memprove-tune ab`; `rounds` is set here.
     pub(crate) run: experiment::Options,
     /// The units to test; empty for every unit the agent reads.
     pub(crate) units: Vec<String>,
@@ -98,7 +98,7 @@ impl Check {
             "no trial of the final check could be judged; its report says what went wrong"
                 .to_owned()
         } else if units > 1 {
-            "removed together, the units lose the final check; each is removable alone, and `tune ab --variant` tests a combination".to_owned()
+            "removed together, the units lose the final check; each is removable alone, and `memprove-tune ab --variant` tests a combination".to_owned()
         } else {
             "on the held-out tasks the agent does worse without the unit".to_owned()
         }
@@ -147,7 +147,7 @@ fn candidates<'a>(
                 .find(|unit| unit.id == *id)
                 .ok_or_else(|| {
                     Error::Usage(format!(
-                        "the configuration has no unit `{id}`; `tune scan` lists the units"
+                        "the configuration has no unit `{id}`; `memprove-tune scan` lists the units"
                     ))
                 })?;
             if !units.iter().any(|listed| listed.id == unit.id) {
@@ -199,7 +199,7 @@ fn nothing(inventory: &Inventory, not_tested: &[(&str, &str)]) -> String {
     }
     let names: Vec<&str> = not_tested.iter().map(|(id, _)| *id).collect();
     format!(
-        "Nothing to prune: Claude Code reads none of the units ({}); `tune scan` says why.\n",
+        "Nothing to prune: Claude Code reads none of the units ({}); `memprove-tune scan` says why.\n",
         names.join(", ")
     )
 }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/tune-engine", "crates/tune"]
+members = ["crates/tune-engine", "crates/memprove-tune"]
 
 [workspace.package]
 version = "0.0.1"

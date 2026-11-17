@@ -1,4 +1,4 @@
-//! `tune prune` from the outside, with an agent that is a shell script
+//! `memprove-tune prune` from the outside, with an agent that is a shell script
 //! whose behaviour depends on the configuration it finds: units that
 //! matter are kept, the others end up in a patch that applies, the
 //! verdicts are written down, and the same command twice gives the same.
@@ -64,7 +64,7 @@ fn repo(claude: &str, tasks: usize) -> tempfile::TempDir {
 }
 
 fn tune(dir: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_tune"))
+    Command::new(env!("CARGO_BIN_EXE_memprove-tune"))
         .args(args)
         .current_dir(dir)
         .stdin(std::process::Stdio::null())
@@ -120,7 +120,7 @@ const TWO: &str =
     "## Useful\nAlways write ok to answer.txt.\n\n## Useless\nBe kind to the reader.\n";
 const AGENT_ARGS: [&str; 2] = ["--agent-cmd", "sh agent.sh"];
 
-/// What `tune prune --json` says of the repository with the three kinds
+/// What `memprove-tune prune --json` says of the repository with the three kinds
 /// of unit, once every trial is done.
 fn assert_three_kinds_report(value: &JsonValue) {
     assert_eq!(text(value, "schema"), "tune.prune.v1");
@@ -190,7 +190,7 @@ fn units_that_help_stay_and_the_rest_goes_into_a_patch_that_applies() {
     let mut args = vec!["prune", "--jobs", "4", "--yes", "--pass-env", "PROBE"];
     args.extend(AGENT_ARGS);
     let run = |args: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_tune"))
+        Command::new(env!("CARGO_BIN_EXE_memprove-tune"))
             .args(args)
             .current_dir(root)
             .env("PROBE", &probe)
@@ -219,7 +219,8 @@ fn units_that_help_stay_and_the_rest_goes_into_a_patch_that_applies() {
             "missing {expected:?} in:\n{report}"
         );
     }
-    assert!(!report.to_lowercase().contains("memprove"), "{report}");
+    // It is a tool of its own: nothing of memprove's is read or written.
+    assert!(!root.join(".memprove").exists());
 
     let patch = fs::read(root.join(".tune/prune.patch")).expect("the patch");
     let written = String::from_utf8_lossy(&patch).into_owned();
@@ -511,7 +512,7 @@ fn wrong_requests_are_usage_errors() {
     let help = tune(dir.path(), &["prune", "--help"]);
     assert!(help.status.success());
     assert!(stdout(&help).contains("--holdout"));
-    assert!(stdout(&tune(dir.path(), &["--help"])).contains("tune prune"));
+    assert!(stdout(&tune(dir.path(), &["--help"])).contains("memprove-tune prune"));
 
     // Nothing the agent reads: nothing to do, and that is not an error.
     let empty = repo("", 1);

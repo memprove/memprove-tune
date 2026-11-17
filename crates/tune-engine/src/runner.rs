@@ -240,7 +240,7 @@ fn run_jobs(context: &Context<'_>, jobs: &[Job<'_>]) -> Vec<(usize, TrialResult)
 pub fn progress_line(result: &TrialResult) -> String {
     let seconds = result.agent.as_ref().map_or(0, |agent| agent.duration_ms) / 1000;
     let mut line = format!(
-        "tune: {} #{}: {} (agent {seconds} s",
+        "memprove-tune: {} #{}: {} (agent {seconds} s",
         result.task,
         result.trial,
         result.outcome.name()
@@ -313,7 +313,7 @@ fn run_trial(context: &Context<'_>, job: &Job<'_>) -> TrialResult {
     if !context.options.keep_worktrees
         && let Err(error) = tree.remove()
     {
-        eprintln!("tune: {}: {error}", result.logs);
+        eprintln!("memprove-tune: {}: {error}", result.logs);
     }
     result
 }

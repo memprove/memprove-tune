@@ -100,6 +100,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
+name = "memprove-tune"
+version = "0.0.1"
+dependencies = [
+ "sha2",
+ "tempfile",
+ "tune-engine",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -146,15 +155,6 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys",
-]
-
-[[package]]
-name = "tune"
-version = "0.0.1"
-dependencies = [
- "sha2",
- "tempfile",
- "tune-engine",
 ]
 
 [[package]]

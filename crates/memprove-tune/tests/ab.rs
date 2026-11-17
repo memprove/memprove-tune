@@ -1,4 +1,4 @@
-//! `tune ab` from the outside, with an agent that is a shell script whose
+//! `memprove-tune ab` from the outside, with an agent that is a shell script whose
 //! behaviour depends on the configuration it finds: a unit that matters is
 //! kept, one that does not is removable, the same configuration twice
 //! shows no difference, a second run continues the first, and a budget
@@ -59,7 +59,7 @@ fn repo(claude: &str, tasks: usize) -> tempfile::TempDir {
 }
 
 fn tune(dir: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_tune"))
+    Command::new(env!("CARGO_BIN_EXE_memprove-tune"))
         .args(args)
         .current_dir(dir)
         .stdin(std::process::Stdio::null())
@@ -141,7 +141,8 @@ fn a_unit_that_matters_is_kept_and_one_that_does_not_is_removable() {
             "missing {expected:?} in:\n{report}"
         );
     }
-    assert!(!report.to_lowercase().contains("memprove"), "{report}");
+    // It is a tool of its own: nothing of memprove's is read or written.
+    assert!(!dir.path().join(".memprove").exists());
 
     // The same command again runs nothing new and reports the same.
     args.push("--json");

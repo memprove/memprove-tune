@@ -156,7 +156,7 @@ pub(crate) fn changed(
             .find(|unit| unit.id == *id)
             .ok_or_else(|| {
                 Error::Usage(format!(
-                    "the configuration has no unit `{id}`; `tune scan` lists the units"
+                    "the configuration has no unit `{id}`; `memprove-tune scan` lists the units"
                 ))
             })?;
         match unit.kind {

@@ -30,7 +30,7 @@ timeouts of a written task.
 
 Not copied: the `memprove eval` command line, baselines, reports, the rest
 of `init` (the smoke task, the workflow file, the templates), and the
-memory probe. The experiment layer (`crates/tune`) has its own command
+memory probe. The experiment layer (`crates/memprove-tune`) has its own command
 line and reports.
 
 ## What was changed in the copy
@@ -46,7 +46,7 @@ Names only, and the removal of the memory feature:
 | run files in `<git common dir>/memprove-eval/runs` | `<git common dir>/tune/runs` |
 | working copies in `$TMPDIR/memprove-eval-<run>` | `$TMPDIR/tune-<run>` |
 | trial commit author `memprove eval <eval@memprove.invalid>` | `tune <trial@tune.invalid>` |
-| message prefixes `memprove eval:`, `memprove-eval:` | `tune:` |
+| message prefixes `memprove eval:`, `memprove-eval:` | `tune:` in a trial's `agent.err`; `memprove-tune:`, the command's name, on the terminal |
 | mined tasks go to `evals/` (`init::EVALS_DIR`) | `.tune/tasks/` (`taskfile::TASKS_DIR`) |
 | `--verify` worktrees and logs in `<git common dir>/memprove-eval/mine` | `<git common dir>/tune/mine` |
 

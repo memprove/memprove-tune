@@ -1,4 +1,4 @@
-//! `tune scan`: what the repository's agent configuration is made of, what
+//! `memprove-tune scan`: what the repository's agent configuration is made of, what
 //! each unit costs, and what looks wrong without running anything.
 
 use std::{
@@ -18,7 +18,7 @@ use crate::{
     units::{self, FileInfo, Inventory, Load, Unit},
 };
 
-/// The schema of `tune scan --json`.
+/// The schema of `memprove-tune scan --json`.
 pub(crate) const SCAN_SCHEMA: &str = "tune.scan.v1";
 
 /// What a scan found.
@@ -27,7 +27,7 @@ pub(crate) struct Scan {
     pub(crate) inventory: Inventory,
     /// The findings.
     pub(crate) smells: Vec<Smell>,
-    /// What `tune prune` wrote down for the units, by unit, and whether
+    /// What `memprove-tune prune` wrote down for the units, by unit, and whether
     /// each still holds for today's configuration and task files.
     pub(crate) verdicts: Vec<(Entry, Status)>,
 }
@@ -159,7 +159,7 @@ fn advice_name(advice: &str) -> &'static str {
     }
 }
 
-/// The verdicts `tune prune` wrote down, one a line; nothing when there
+/// The verdicts `memprove-tune prune` wrote down, one a line; nothing when there
 /// are none.
 fn verdict_lines(verdicts: &[(Entry, Status)]) -> String {
     if verdicts.is_empty() {
@@ -191,7 +191,7 @@ fn verdict_lines(verdicts: &[(Entry, Status)]) -> String {
     }
     if verdicts.iter().any(|(_, status)| !status.stale.is_empty()) {
         out.push_str(
-            "  A stale verdict says nothing about today's files; `tune prune` tests them again.\n",
+            "  A stale verdict says nothing about today's files; `memprove-tune prune` tests them again.\n",
         );
     }
     out
@@ -248,7 +248,7 @@ pub(crate) fn text(scan: &Scan) -> String {
     }
     out.push_str(&verdict_lines(&scan.verdicts));
     out.push_str(
-        "\nToken counts are estimates. Nothing was run and no model was called.\nTo test whether a unit earns its place: tune ab --drop <UNIT>, or tune prune for all of them\n",
+        "\nToken counts are estimates. Nothing was run and no model was called.\nTo test whether a unit earns its place: memprove-tune ab --drop <UNIT>, or memprove-tune prune for all of them\n",
     );
     out
 }

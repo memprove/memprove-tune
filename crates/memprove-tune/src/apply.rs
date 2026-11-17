@@ -1,4 +1,4 @@
-//! `tune apply`: the setup command an experiment adds to every task. In
+//! `memprove-tune apply`: the setup command an experiment adds to every task. In
 //! the trial's working copy it replaces the configuration the task's base
 //! commit holds with an arm's, and leaves the copy as if it had begun that
 //! way: one commit, a clean tree, and nothing of the old configuration in
@@ -37,7 +37,7 @@ fn remove(top: &Path, file: &Path) -> Result<(), Error> {
 pub(crate) fn apply(cwd: &Path, arm: &Path, hide: Option<&Path>) -> Result<(), Error> {
     let not_a_trial = || {
         Error::Invalid(
-            "`tune apply` only runs as a setup command inside a trial's working copy; `tune ab` adds it by itself"
+            "`memprove-tune apply` only runs as a setup command inside a trial's working copy; `memprove-tune ab` adds it by itself"
                 .to_owned(),
         )
     };

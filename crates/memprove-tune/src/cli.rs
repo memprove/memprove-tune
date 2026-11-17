@@ -13,49 +13,51 @@ use crate::{
     variant::{Change, Variant},
 };
 
-/// What `tune --help` prints.
+/// What `memprove-tune --help` prints.
 pub(crate) const HELP: &str = "\
-tune tests whether the instructions you give a coding agent earn their place.
-It runs the agent on your repository's own tasks with and without a part of
-the configuration, and only your tests decide.
+memprove-tune tests whether the instructions you give a coding agent earn
+their place. It runs the agent on your repository's own tasks with and
+without a part of the configuration, and only your tests decide. It is a
+tool of its own: it does not need memprove installed.
 
 Usage:
-  tune scan [--json]
+  memprove-tune scan [--json]
       List the units of the configuration (the sections of CLAUDE.md and
       AGENTS.md, the files under .claude/rules, the skills under
       .claude/skills), what each costs in tokens, and what looks wrong.
       Runs nothing and calls no model.
 
-  tune ab (--drop UNIT | --replace PATH=FILE | --add PATH=FILE | --bare
-           | --variant NAME:CHANGE[,CHANGE...])... [options]
+  memprove-tune ab (--drop UNIT | --replace PATH=FILE | --add PATH=FILE
+                    | --bare | --variant NAME:CHANGE[,CHANGE...])... [options]
       Run the agent on the task files with today's configuration and with
       each changed one, in turns, and say whether the difference is real.
-      See `tune ab --help`.
+      See `memprove-tune ab --help`.
 
-  tune prune [--unit UNIT]... [--top N] [options]
+  memprove-tune prune [--unit UNIT]... [--top N] [options]
       Drop every unit in turn, find the ones the agent does as well
       without, check them together, and write a patch that removes them
       (.tune/prune.patch) and what was found (.tune/verdicts.json).
-      See `tune prune --help`.
+      See `memprove-tune prune --help`.
 
-  tune init [--limit N] [--verify] [--dry-run]
+  memprove-tune init [--limit N] [--verify] [--dry-run]
       Write the first task files from the repository's own history: a
       commit that changed a test and code becomes a task.
-      See `tune init --help`.
+      See `memprove-tune init --help`.
 
-  tune --help | --version
+  memprove-tune --help | --version
 ";
 
-/// What `tune init --help` prints.
+/// What `memprove-tune init --help` prints.
 pub(crate) const INIT_HELP: &str = "\
-tune init writes task files from the repository's own history, so that
-`tune ab` and `tune prune` have something to judge with. It looks at the
-commits, newest first, and takes each one that is not a merge and changed
-a test file and other code, in at most 20 files and 600 lines. The task
-starts from the commit's parent, its prompt is the commit message, and its
-check is the repository's test command, narrowed to the tests the commit
-changed where that can be done. The commit's tests are kept as the task's
-hidden tests: the agent never sees them.
+memprove-tune init writes task files from the repository's own history,
+so that `memprove-tune ab` and `memprove-tune prune` have something to
+judge with. It looks at the commits, newest first, and takes each one that
+is not a merge and changed a test file and other code, in at most 20
+files and 600 lines. The task starts from the commit's parent, its prompt
+is the commit message, and its check is the repository's test command,
+narrowed to the tests the commit changed where that can be done. The
+commit's tests are kept as the task's hidden tests: the agent never sees
+them.
 
 Options:
   --limit N                at most N tasks (default 10)
@@ -84,16 +86,17 @@ little to do the work from, and a task no agent can pass tells nothing
 about the configuration.
 ";
 
-/// What `tune ab --help` prints.
+/// What `memprove-tune ab --help` prints.
 pub(crate) const AB_HELP: &str = "\
-tune ab runs the agent on your task files under today's configuration (the
-baseline), under the same configuration a second time (the control, which
-shows how much two runs differ by chance), and under each variant. The arms
-take turns, every trial starts from a clean copy of the repository, and only
-the task's own check decides pass or fail.
+memprove-tune ab runs the agent on your task files under today's
+configuration (the baseline), under the same configuration a second time
+(the control, which shows how much two runs differ by chance), and under
+each variant. The arms take turns, every trial starts from a clean copy of
+the repository, and only the task's own check decides pass or fail.
 
 Variants (each option makes one):
-  --drop UNIT              without this unit (`tune scan` lists the units)
+  --drop UNIT              without this unit (`memprove-tune scan` lists
+                           the units)
   --replace PATH=FILE      with the configuration file PATH holding FILE's text
   --add PATH=FILE          with a new configuration file PATH
   --bare                   without any configuration
@@ -134,21 +137,22 @@ at --margin 20); otherwise NOT ENOUGH EVIDENCE. For a variant that only
 drops units these read KEEP, REMOVABLE and NOT ENOUGH EVIDENCE.
 ";
 
-/// What `tune prune --help` prints.
+/// What `memprove-tune prune --help` prints.
 pub(crate) const PRUNE_HELP: &str = "\
-tune prune finds the units of the configuration that the agent does as well
-without. It runs one experiment with today's configuration (the baseline),
-the same a second time (the control), and one arm per unit that leaves that
-unit out. Then it drops every unit that came out REMOVABLE at once and
-checks that configuration against the baseline once more, on tasks the
-search did not use when there are enough of them. If the check holds it
-writes .tune/prune.patch; `git apply .tune/prune.patch` makes the change,
-and nothing is changed before you do that. What was found for each unit is
-written to .tune/verdicts.json, and `tune scan` shows whether it still holds.
+memprove-tune prune finds the units of the configuration that the agent
+does as well without. It runs one experiment with today's configuration
+(the baseline), the same a second time (the control), and one arm per unit
+that leaves that unit out. Then it drops every unit that came out
+REMOVABLE at once and checks that configuration against the baseline once
+more, on tasks the search did not use when there are enough of them. If
+the check holds it writes .tune/prune.patch; `git apply .tune/prune.patch`
+makes the change, and nothing is changed before you do that. What was
+found for each unit is written to .tune/verdicts.json, and
+`memprove-tune scan` shows whether it still holds.
 
 What to test:
   --unit UNIT              test this unit; may repeat (default: every unit
-                           the agent reads; `tune scan` lists them)
+                           the agent reads; `memprove-tune scan` lists them)
   --top N                  test only the N largest units
   --holdout N              tasks kept out of the search for the final check
                            (default: a quarter of them when there are 4 or
@@ -227,7 +231,7 @@ pub(crate) fn margin(text: &str) -> Option<f64> {
     (1.0..=50.0).contains(&points).then_some(points / 100.0)
 }
 
-/// What `tune ab` does when no option says otherwise.
+/// What `memprove-tune ab` does when no option says otherwise.
 fn ab_defaults() -> Options {
     Options {
         variants: Vec::new(),
@@ -303,7 +307,7 @@ fn money(arg: &str, rest: &mut Rest<'_>) -> Result<u64, Error> {
     })
 }
 
-/// Reads `arg` when it is an option that `tune ab` and `tune prune` share,
+/// Reads `arg` when it is an option that `memprove-tune ab` and `memprove-tune prune` share,
 /// and says whether it was one.
 fn shared_option(
     arg: &str,
@@ -378,7 +382,7 @@ fn ab_command(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<(), Er
             "--no-control" => options.control = false,
             other => {
                 return Err(Error::Usage(format!(
-                    "`tune ab` has no option `{other}`; `tune ab --help` lists them"
+                    "`memprove-tune ab` has no option `{other}`; `memprove-tune ab --help` lists them"
                 )));
             }
         }
@@ -419,7 +423,7 @@ fn prune_command(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<(),
             "--rounds" => options.rounds = Some(number(arg, &mut rest)?),
             other => {
                 return Err(Error::Usage(format!(
-                    "`tune prune` has no option `{other}`; `tune prune --help` lists them"
+                    "`memprove-tune prune` has no option `{other}`; `memprove-tune prune --help` lists them"
                 )));
             }
         }
@@ -449,7 +453,7 @@ fn init_command(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<(), 
             "--json" => options.json = true,
             other => {
                 return Err(Error::Usage(format!(
-                    "`tune init` has no option `{other}`; `tune init --help` lists them"
+                    "`memprove-tune init` has no option `{other}`; `memprove-tune init --help` lists them"
                 )));
             }
         }
@@ -466,7 +470,10 @@ pub(crate) fn run(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<()
     let rest = &args[1..];
     match command.as_str() {
         "--help" | "-h" | "help" => print(out, HELP),
-        "--version" | "-V" => print(out, &format!("tune {}\n", env!("CARGO_PKG_VERSION"))),
+        "--version" | "-V" => print(
+            out,
+            &format!("memprove-tune {}\n", env!("CARGO_PKG_VERSION")),
+        ),
         "scan" => scan_command(rest, cwd, out),
         "ab" => ab_command(rest, cwd, out),
         "prune" => prune_command(rest, cwd, out),
@@ -477,7 +484,8 @@ pub(crate) fn run(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<()
                 apply::apply(cwd, Path::new(arm), Some(Path::new(list)))
             }
             _ => Err(Error::Usage(
-                "`tune apply --files DIR [--hide LIST]` is the setup command of a trial".to_owned(),
+                "`memprove-tune apply --files DIR [--hide LIST]` is the setup command of a trial"
+                    .to_owned(),
             )),
         },
         other => Err(Error::Usage(format!("unknown command `{other}`"))),
@@ -501,7 +509,9 @@ fn scan_command(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<(), 
             "--json" => json = true,
             "--help" | "-h" => return print(out, HELP),
             other => {
-                return Err(Error::Usage(format!("`tune scan` has no option `{other}`")));
+                return Err(Error::Usage(format!(
+                    "`memprove-tune scan` has no option `{other}`"
+                )));
             }
         }
     }

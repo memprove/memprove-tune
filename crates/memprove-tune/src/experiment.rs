@@ -1,6 +1,6 @@
 //! An experiment: its arms, running them in turns through the trial
 //! engine, continuing one that was started before, and stopping at the
-//! budget. `tune ab` is one experiment; `tune prune` runs two.
+//! budget. `memprove-tune ab` is one experiment; `memprove-tune prune` runs two.
 
 use std::{
     collections::BTreeMap,
@@ -25,7 +25,7 @@ use crate::{
     variant::{self, Change, Variant},
 };
 
-/// What `tune ab` was asked to do; `tune prune` shares all but the
+/// What `memprove-tune ab` was asked to do; `memprove-tune prune` shares all but the
 /// variants.
 #[allow(
     clippy::struct_excessive_bools,
@@ -132,7 +132,7 @@ pub(crate) struct Finished<'a> {
     pub(crate) agent_version: Option<String>,
 }
 
-/// How long `tune apply` may take in a trial.
+/// How long `memprove-tune apply` may take in a trial.
 const APPLY_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// A directory name for the arm `label` that no arm in `taken` has.
@@ -566,7 +566,8 @@ impl<'a> Experiment<'a> {
         prior: Option<u64>,
     ) -> Result<(u64, Option<&'static str>), Error> {
         let options = self.options;
-        let exe = std::env::current_exe().map_err(|error| Error::io(Path::new("tune"), error))?;
+        let exe = std::env::current_exe()
+            .map_err(|error| Error::io(Path::new("memprove-tune"), error))?;
         self.write_arms()?;
         let mut trials_run = 0;
         for round in 1..=options.rounds {
@@ -583,7 +584,7 @@ impl<'a> Experiment<'a> {
                     && spent(cells) + each * count(self.tasks.len()) > cap
                 {
                     eprintln!(
-                        "tune: stopped at the budget: {} spent, the next {} trials would pass the cap of {}",
+                        "memprove-tune: stopped at the budget: {} spent, the next {} trials would pass the cap of {}",
                         dollars(spent(cells)),
                         self.tasks.len(),
                         dollars(cap)
@@ -599,7 +600,7 @@ impl<'a> Experiment<'a> {
                     .filter(|result| result.outcome == Outcome::Passed)
                     .count();
                 eprintln!(
-                    "tune: round {round}/{}, {}: {passed}/{} passed ({} spent so far)",
+                    "memprove-tune: round {round}/{}, {}: {passed}/{} passed ({} spent so far)",
                     options.rounds,
                     arm.label,
                     record.results.len(),

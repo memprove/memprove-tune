@@ -15,7 +15,7 @@ use crate::{
     stats::{self, Paired, Verdict},
 };
 
-/// The schema of `tune ab --json` and of an experiment's `report.json`.
+/// The schema of `memprove-tune ab --json` and of an experiment's `report.json`.
 pub(crate) const AB_SCHEMA: &str = "tune.ab.v1";
 
 /// One arm's totals.

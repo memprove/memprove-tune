@@ -1,4 +1,4 @@
-//! `tune init` from the outside: task files from the repository's own
+//! `memprove-tune init` from the outside: task files from the repository's own
 //! history, which the experiment commands then run as they are.
 
 use std::{
@@ -108,7 +108,7 @@ fn history() -> History {
 }
 
 fn tune(dir: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_tune"))
+    Command::new(env!("CARGO_BIN_EXE_memprove-tune"))
         .args(args)
         .current_dir(dir)
         .stdin(std::process::Stdio::null())
@@ -172,11 +172,12 @@ fn init_writes_tasks_that_the_experiment_runs_as_they_are() {
         "make test",
         // Nothing was run to see whether the tasks judge anything.
         "--verify",
-        "tune prune --dry-run",
+        "memprove-tune prune --dry-run",
     ] {
         assert!(said.contains(expected), "missing {expected:?} in:\n{said}");
     }
-    assert!(!said.to_lowercase().contains("memprove"), "{said}");
+    // It is a tool of its own: nothing of memprove's is read or written.
+    assert!(!root.join(".memprove").exists());
     let written = files(&root.join(".tune/tasks"));
     assert_eq!(written.len(), 6, "{written:?}");
     assert!(written.contains(&format!("mined-{}.json", h.two)));
@@ -335,7 +336,7 @@ fn what_cannot_be_done_is_said() {
     let help = tune(root, &["init", "--help"]);
     assert!(help.status.success());
     assert!(stdout(&help).contains("--verify"));
-    assert!(stdout(&tune(root, &["--help"])).contains("tune init"));
+    assert!(stdout(&tune(root, &["--help"])).contains("memprove-tune init"));
 
     // No way to run the tests: no task can be judged.
     let bare = tempfile::tempdir().expect("tempdir");

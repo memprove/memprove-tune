@@ -1,13 +1,13 @@
-# tune: one-page spec (stages 1 and 2)
+# memprove-tune: one-page spec (stages 1 and 2)
 
-`tune` is a working name. Scope of this page: what stages 1 (`scan`, `ab`)
+Scope of this page: what stages 1 (`scan`, `ab`)
 and 2 (`prune`, the verdict file, `init` for the first tasks) built, the
 decisions in them, and what is left out.
 
 ## What it is for
 
 A person who maintains the configuration of a coding agent (`CLAUDE.md`,
-`AGENTS.md`, rule files, skills) wants to know which parts help. `tune`
+`AGENTS.md`, rule files, skills) wants to know which parts help. `memprove-tune`
 answers by experiment on the repository's own tasks, judged only by the
 repository's own checks.
 
@@ -26,28 +26,35 @@ repository's own checks.
 
 | Command | Does |
 | --- | --- |
-| `tune scan [--json]` | Units, their token cost, findings, and the verdicts on file with whether each still holds. Runs nothing. |
-| `tune ab ...` | Baseline, control and variants on the task files; report as text or JSON. |
-| `tune prune ...` | Every unit dropped alone, the removable ones dropped together and checked, a patch and the verdict file; report as text or JSON. |
-| `tune init ...` | Task files from the repository's history: a commit that changed a test and code becomes a task. Calls no model. |
-| `tune apply --files DIR [--hide LIST]` | Internal: the setup command every trial starts with. |
+| `memprove-tune scan [--json]` | Units, their token cost, findings, and the verdicts on file with whether each still holds. Runs nothing. |
+| `memprove-tune ab ...` | Baseline, control and variants on the task files; report as text or JSON. |
+| `memprove-tune prune ...` | Every unit dropped alone, the removable ones dropped together and checked, a patch and the verdict file; report as text or JSON. |
+| `memprove-tune init ...` | Task files from the repository's history: a commit that changed a test and code becomes a task. Calls no model. |
+| `memprove-tune apply --files DIR [--hide LIST]` | Internal: the setup command every trial starts with. |
 
 Later: `check`, and the rest of `init` (a starting configuration, the
 onboarding skill) for the public release; `optimize` (v2).
 
 ## Decisions
 
-- **Independent of memprove.** Own repository and binary. The trial engine
-  is a renamed copy (`crates/tune-engine/PROVENANCE.md`); nothing here
-  builds against, runs or prints memprove.
+- **A tool of its own, under the memprove name.** Own repository and
+  binary, called `memprove-tune` (decided 2026-11-17), with its page under
+  memprove.dev. It does not depend on memprove: it builds against none of
+  its crates (the trial engine is a renamed copy,
+  `crates/tune-engine/PROVENANCE.md`), does not need it installed, and
+  reads and writes nothing of its data (`.memprove/`).
+- **The name on disk is `tune`.** The command is `memprove-tune`; what it
+  keeps is named `tune`: `.tune/` in the repository, `tune/` in the Git
+  directory, the schemas `tune.*.v1`, the variables `TUNE_*`, and the
+  engine crate `tune-engine`.
 - **The engine is used as it is.** The experiment calls `run_suite` once
   per arm per round with one trial per task. The arm's configuration gets
-  into the trial through a setup command, `tune apply`, which amends the
+  into the trial through a setup command, `memprove-tune apply`, which amends the
   trial's single commit and points the old commit's name at the new one
   with `git replace`, then expires the reflog and prunes. The engine's
   diff and hidden-test handling then work unchanged, the agent sees one
   commit and a clean tree, and the replaced configuration is gone from the
-  object store. `crates/tune/tests/apply.rs` proves each of these.
+  object store. `crates/memprove-tune/tests/apply.rs` proves each of these.
 - **Today's configuration, the task's code.** The baseline is the
   configuration in the working tree now, laid over each task's base commit.
 - **Units.** Sections of an instruction file, split at the shallowest
@@ -101,7 +108,7 @@ onboarding skill) for the public release; `optimize` (v2).
   and no patch; the trials are kept and the same command with a larger
   cap goes on. `--max-cost` covers the search and the check together.
 - **No trial sees a task file.** The engine hides the files of the tasks
-  it runs; `tune apply --hide` removes the files and hidden tests of every
+  it runs; `memprove-tune apply --hide` removes the files and hidden tests of every
   other task of the suite, so that a search trial cannot read a held-out
   task and the other way round.
 - **The verdict file.** `.tune/verdicts.json` (`tune.verdicts.v1`): by
@@ -119,7 +126,7 @@ onboarding skill) for the public release; `optimize` (v2).
 ### `init` (the first tasks)
 
 - **Copied, not written again.** Mining is memprove-eval's `mine`, taken
-  into `tune-engine` with names changed (`PROVENANCE.md`); `tune init` is
+  into `tune-engine` with names changed (`PROVENANCE.md`); `memprove-tune init` is
   its command line. Tasks go to `.tune/tasks`, where `ab` and `prune` look
   first.
 - **What becomes a task.** A commit that is not a merge and changed a test
@@ -150,7 +157,7 @@ onboarding skill) for the public release; `optimize` (v2).
 - `prune` tests each unit alone against today's configuration. Two units
   that cover for each other both read removable; the final check catches
   that and writes no patch, but it does not say which of them to keep
-  (`tune ab --variant` tests a combination).
+  (`memprove-tune ab --variant` tests a combination).
 - A unit cannot show its worth on a task the agent fails with or without
   it. `prune` warns when the baseline passes fewer than half its trials.
 - `prune` does not fit the units to the cap: the plan says how many the

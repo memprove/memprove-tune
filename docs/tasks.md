@@ -5,8 +5,8 @@ your repository, and a command that says whether it did it. Good tasks are
 things the repository really needed: a bug that was fixed, a small feature
 that was added, each with the test that proves it.
 
-`tune init` writes the first task files from your history (a commit that
-changed a test and code becomes a task); `tune init --verify` keeps only
+`memprove-tune init` writes the first task files from your history (a commit that
+changed a test and code becomes a task); `memprove-tune init --verify` keeps only
 those whose check fails before the commit and passes after it. Read what it
 wrote, and add tasks by hand for work the history does not show.
 
@@ -59,10 +59,10 @@ left out of the comparison: it says nothing about the configuration.
 
 A unit that matters shows with few pairs: five tasks that all fail without
 it are enough. Showing that a unit can go takes about 30 pairs that agree,
-for example 10 tasks in 3 rounds. `tune ab --dry-run` shows the number of
+for example 10 tasks in 3 rounds. `memprove-tune ab --dry-run` shows the number of
 trials and the estimated cost before anything runs.
 
-`tune prune` works out the rounds from the tasks it has, and with four or
+`memprove-tune prune` works out the rounds from the tasks it has, and with four or
 more tasks it keeps a quarter of them out of the search to check the result
 on. Tasks the agent fails with today's configuration tell it nothing: use
 tasks the baseline passes most of the time.

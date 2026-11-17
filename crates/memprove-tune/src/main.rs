@@ -1,4 +1,4 @@
-//! `tune`: A/B experiments on the configuration of a coding agent, judged
+//! `memprove-tune`: A/B experiments on the configuration of a coding agent, judged
 //! by the repository's own tests.
 
 #![forbid(unsafe_code)]
@@ -28,18 +28,18 @@ fn main() -> ExitCode {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(error) => {
-            eprintln!("tune: cannot tell the current directory: {error}");
+            eprintln!("memprove-tune: cannot tell the current directory: {error}");
             return ExitCode::from(1);
         }
     };
     match cli::run(&args, &cwd, &mut std::io::stdout().lock()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error::Error::Usage(detail)) => {
-            eprintln!("tune: {detail}\nTry `tune --help`.");
+            eprintln!("memprove-tune: {detail}\nTry `memprove-tune --help`.");
             ExitCode::from(2)
         }
         Err(error) => {
-            eprintln!("tune: {error}");
+            eprintln!("memprove-tune: {error}");
             ExitCode::from(1)
         }
     }

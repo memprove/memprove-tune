@@ -1,4 +1,4 @@
-//! `tune init`: the first task files, from the repository's own history.
+//! `memprove-tune init`: the first task files, from the repository's own history.
 //! A commit that changed a test and code becomes a task: start from its
 //! parent, ask for what its message says, judge by its tests.
 
@@ -15,10 +15,10 @@ use tune_engine::{
 
 use crate::{cli::print, error::Error, experiment::count, scan::counted};
 
-/// The schema of `tune init --json`.
+/// The schema of `memprove-tune init --json`.
 pub(crate) const INIT_SCHEMA: &str = "tune.init.v1";
 
-/// What `tune init` was asked to do.
+/// What `memprove-tune init` was asked to do.
 pub(crate) struct Options {
     /// At most this many tasks.
     pub(crate) limit: usize,
@@ -59,7 +59,7 @@ fn none_found(range: Option<&str>) -> String {
         |range| format!("the commits of {range}"),
     );
     format!(
-        "No commit in {looked} can become a task. A task is made from a commit that is not a merge and changed a test file and other code, in at most {} files and {} lines.\nWrite the task files by hand instead: each is a prompt and a check command (`tune init --help` shows one).\n",
+        "No commit in {looked} can become a task. A task is made from a commit that is not a merge and changed a test file and other code, in at most {} files and {} lines.\nWrite the task files by hand instead: each is a prompt and a check command (`memprove-tune init --help` shows one).\n",
         history::MAX_FILES,
         history::MAX_LINES,
     )
@@ -130,11 +130,11 @@ fn text(options: &Options, out_dir: &str, tasks: &[MinedTask]) -> String {
     }
     if !options.verify && !new.is_empty() {
         out.push_str(
-            "The tasks were not run. A task whose tests pass before the change, or fail after it, judges nothing: `tune init --verify` runs each task's tests before and after its commit and keeps the ones that behave.\n",
+            "The tasks were not run. A task whose tests pass before the change, or fail after it, judges nothing: `memprove-tune init --verify` runs each task's tests before and after its commit and keeps the ones that behave.\n",
         );
     }
     out.push_str(
-        "Read the prompts before you trust them: each is a commit message, and it may say too little to do the work from.\nNext: `tune scan` lists the units of the configuration, and `tune prune --dry-run` shows the plan and its cost.\n",
+        "Read the prompts before you trust them: each is a commit message, and it may say too little to do the work from.\nNext: `memprove-tune scan` lists the units of the configuration, and `memprove-tune prune --dry-run` shows the plan and its cost.\n",
     );
     out
 }
@@ -197,7 +197,7 @@ pub(crate) fn run(options: &Options, cwd: &Path, out: &mut dyn Write) -> Result<
     spec.verify = options.verify;
     if options.verify && !options.dry_run {
         eprintln!(
-            "tune: running each task's tests before and after its commit; this can take a while"
+            "memprove-tune: running each task's tests before and after its commit; this can take a while"
         );
     }
     let tasks = mine::mine(&spec)?;

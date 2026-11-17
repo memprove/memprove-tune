@@ -164,7 +164,7 @@ pub(crate) fn read(root: &Path) -> Result<Vec<Entry>, Error> {
     let written = fs::read_to_string(&file).map_err(|error| Error::io(&file, error))?;
     let wrong = |detail: String| {
         Error::Invalid(format!(
-            "{LEDGER_PATH} cannot be read: {detail}. Fix the file or delete it; `tune prune` writes it again."
+            "{LEDGER_PATH} cannot be read: {detail}. Fix the file or delete it; `memprove-tune prune` writes it again."
         ))
     };
     let value = parse_strict(&written).map_err(|error| wrong(error.to_string()))?;

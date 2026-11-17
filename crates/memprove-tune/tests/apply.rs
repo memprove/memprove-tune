@@ -88,7 +88,7 @@ fn the_agent_sees_the_arm_and_nothing_of_what_it_replaced() {
             0,
             CommandSpec {
                 argv: vec![
-                    env!("CARGO_BIN_EXE_tune").to_owned(),
+                    env!("CARGO_BIN_EXE_memprove-tune").to_owned(),
                     "apply".to_owned(),
                     "--files".to_owned(),
                     arm.to_string_lossy().into_owned(),
@@ -164,7 +164,7 @@ fn apply_refuses_to_run_anywhere_but_a_trial() {
     git(root, &["init", "--quiet", "-b", "main"]).expect("init");
     write(root, "CLAUDE.md", "mine\n");
     let arm = tempfile::tempdir().expect("tempdir");
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_tune"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_memprove-tune"))
         .args(["apply", "--files"])
         .arg(arm.path())
         .env("TUNE_TASK", "a")
