@@ -19,15 +19,16 @@ use crate::{
 pub(crate) const AB_SCHEMA: &str = "tune.ab.v1";
 
 /// One arm's totals.
-struct Totals {
-    trials: u64,
-    passed: u64,
-    errors: u64,
-    cost: Option<u64>,
-    tokens: u64,
+pub(crate) struct Totals {
+    pub(crate) trials: u64,
+    pub(crate) passed: u64,
+    /// Trials that could not be judged.
+    pub(crate) errors: u64,
+    pub(crate) cost: Option<u64>,
+    pub(crate) tokens: u64,
 }
 
-fn totals(cells: &Cells) -> Totals {
+pub(crate) fn totals(cells: &Cells) -> Totals {
     let mut totals = Totals {
         trials: 0,
         passed: 0,
@@ -48,9 +49,9 @@ fn totals(cells: &Cells) -> Totals {
 }
 
 /// An arm against the baseline.
-struct Comparison<'a> {
-    arm: &'a Arm,
-    paired: Paired,
+pub(crate) struct Comparison<'a> {
+    pub(crate) arm: &'a Arm,
+    pub(crate) paired: Paired,
     /// The chance of a split this one-sided if the arm made no difference.
     p_value: Option<f64>,
     /// The most its pass rate can truly be below the baseline's.
@@ -66,7 +67,7 @@ struct Comparison<'a> {
 
 impl Comparison<'_> {
     /// What to do with the units a drop-only arm leaves out.
-    const fn advice(&self) -> Option<&'static str> {
+    pub(crate) const fn advice(&self) -> Option<&'static str> {
         if !self.arm.drops_only {
             return None;
         }
@@ -80,7 +81,7 @@ impl Comparison<'_> {
 
 /// The pairs of `other` against `baseline`: the same task in the same
 /// round, leaving out trials that could not be judged.
-fn pair(baseline: &Cells, other: &Cells) -> (Paired, Option<f64>) {
+pub(crate) fn pair(baseline: &Cells, other: &Cells) -> (Paired, Option<f64>) {
     let mut paired = Paired::default();
     let (mut base_cost, mut other_cost) = (0_u64, 0_u64);
     for (key, base) in baseline {
@@ -105,7 +106,9 @@ fn pair(baseline: &Cells, other: &Cells) -> (Paired, Option<f64>) {
     (paired, change)
 }
 
-fn comparisons<'a>(finished: &'a Finished<'_>) -> (Option<Paired>, Vec<Comparison<'a>>) {
+/// The control's pairs, when there is a control, and every variant
+/// against the baseline, in the order of the arms.
+pub(crate) fn comparisons<'a>(finished: &'a Finished<'_>) -> (Option<Paired>, Vec<Comparison<'a>>) {
     let baseline = &finished.cells[0];
     let control = finished
         .arms
@@ -129,7 +132,7 @@ fn comparisons<'a>(finished: &'a Finished<'_>) -> (Option<Paired>, Vec<Compariso
                 paired,
                 p_value: (more + fewer > 0).then(|| stats::sign_test(more, fewer)),
                 worst_loss: stats::worst_loss(&paired),
-                verdict: stats::verdict(&paired, control.as_ref()),
+                verdict: stats::verdict(&paired, control.as_ref(), finished.margin),
                 cost_change,
                 tokens_saved: i64::try_from(finished.arms[0].config_tokens).unwrap_or(i64::MAX)
                     - i64::try_from(arm.config_tokens).unwrap_or(i64::MAX),
@@ -308,11 +311,11 @@ fn uint(value: u64) -> Out {
     Out::uint(value)
 }
 
-fn fraction(value: f64) -> Out {
+pub(crate) fn fraction(value: f64) -> Out {
     Out::Raw(format!("{value:.4}"))
 }
 
-fn paired_members(paired: &Paired) -> Vec<(&'static str, Out)> {
+pub(crate) fn paired_members(paired: &Paired) -> Vec<(&'static str, Out)> {
     vec![
         ("pairs", uint(paired.pairs())),
         ("both_pass", uint(paired.both_pass)),
@@ -395,7 +398,7 @@ pub(crate) fn json(finished: &Finished<'_>) -> String {
             ]),
         ),
         ("significance", fraction(stats::ALPHA)),
-        ("margin", fraction(stats::MARGIN)),
+        ("margin", fraction(finished.margin)),
         ("arms", Out::Array(arms)),
         ("comparisons", Out::Array(comparisons)),
         (

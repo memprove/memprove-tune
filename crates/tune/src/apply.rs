@@ -10,15 +10,31 @@ use tune_engine::{git, workspace::START_SUBJECT};
 
 use crate::{
     error::Error,
-    files::{self, is_config_path},
+    files::{self, is_config_path, is_plain_relative},
 };
 
 /// The variable the engine gives a task's setup commands.
 const TASK_ENV: &str = "TUNE_TASK";
 
+/// Removes `file` from the working copy at `top`, and the directories that
+/// leaves empty.
+fn remove(top: &Path, file: &Path) -> Result<(), Error> {
+    fs::remove_file(file).map_err(|error| Error::io(file, error))?;
+    let mut dir = file.parent();
+    while let Some(parent) = dir.filter(|parent| *parent != top) {
+        if fs::remove_dir(parent).is_err() {
+            break;
+        }
+        dir = parent.parent();
+    }
+    Ok(())
+}
+
 /// Puts the files under `arm` in place of the configuration in the trial
-/// working copy that holds `cwd`.
-pub(crate) fn apply(cwd: &Path, arm: &Path) -> Result<(), Error> {
+/// working copy that holds `cwd`, and takes out the files the lines of
+/// `hide` name: task files and hidden tests of the repository that the
+/// engine does not know of.
+pub(crate) fn apply(cwd: &Path, arm: &Path, hide: Option<&Path>) -> Result<(), Error> {
     let not_a_trial = || {
         Error::Invalid(
             "`tune apply` only runs as a setup command inside a trial's working copy; `tune ab` adds it by itself"
@@ -39,6 +55,10 @@ pub(crate) fn apply(cwd: &Path, arm: &Path) -> Result<(), Error> {
         return Err(not_a_trial());
     }
     let files = files::read_tree(arm)?;
+    let hidden = match hide {
+        Some(list) => fs::read_to_string(list).map_err(|error| Error::io(list, error))?,
+        None => String::new(),
+    };
     let old = git::commit(&top, "HEAD")?;
 
     let listing = git::git(&top, &["ls-files", "-z"])?;
@@ -46,15 +66,12 @@ pub(crate) fn apply(cwd: &Path, arm: &Path) -> Result<(), Error> {
         .split('\0')
         .filter(|path| !path.is_empty() && is_config_path(path))
     {
+        remove(&top, &top.join(path))?;
+    }
+    for path in hidden.lines().filter(|path| is_plain_relative(path)) {
         let file = top.join(path);
-        fs::remove_file(&file).map_err(|error| Error::io(&file, error))?;
-        // A directory it leaves empty goes too.
-        let mut dir = file.parent();
-        while let Some(parent) = dir.filter(|parent| *parent != top.as_path()) {
-            if fs::remove_dir(parent).is_err() {
-                break;
-            }
-            dir = parent.parent();
+        if fs::symlink_metadata(&file).is_ok_and(|meta| !meta.is_dir()) {
+            remove(&top, &file)?;
         }
     }
     files::write_tree(&files, &top)?;

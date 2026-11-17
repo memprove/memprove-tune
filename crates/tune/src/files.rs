@@ -181,7 +181,7 @@ pub(crate) fn write_entry(root: &Path, path: &str, entry: &Entry) -> Result<(), 
 }
 
 /// Whether `path` has only ordinary components: no root, no `..`.
-fn is_plain_relative(path: &str) -> bool {
+pub(crate) fn is_plain_relative(path: &str) -> bool {
     !path.is_empty()
         && Path::new(path)
             .components()

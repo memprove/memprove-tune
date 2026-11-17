@@ -1,13 +1,19 @@
 //! `tune scan`: what the repository's agent configuration is made of, what
 //! each unit costs, and what looks wrong without running anything.
 
-use std::{fmt::Write as _, path::Path};
+use std::{
+    collections::BTreeMap,
+    fmt::Write as _,
+    path::{Path, PathBuf},
+};
 
-use tune_engine::json::Out;
+use tune_engine::{json::Out, task};
 
 use crate::{
     error::Error,
     files,
+    ledger::{self, Entry, Status},
+    report,
     smells::{self, Repo, Smell},
     units::{self, FileInfo, Inventory, Load, Unit},
 };
@@ -21,6 +27,39 @@ pub(crate) struct Scan {
     pub(crate) inventory: Inventory,
     /// The findings.
     pub(crate) smells: Vec<Smell>,
+    /// What `tune prune` wrote down for the units, by unit, and whether
+    /// each still holds for today's configuration and task files.
+    pub(crate) verdicts: Vec<(Entry, Status)>,
+}
+
+/// The verdicts in the ledger of the repository at `root`, each with
+/// whether it still holds.
+fn verdicts(
+    root: &Path,
+    config: &files::FileMap,
+    inventory: &Inventory,
+) -> Result<Vec<(Entry, Status)>, Error> {
+    let today = files::digest(config);
+    // Entries of one run name the same task files: read them once.
+    let mut digests: BTreeMap<Vec<String>, Option<String>> = BTreeMap::new();
+    let mut entries = ledger::read(root)?;
+    entries.sort_by(|a, b| a.unit.cmp(&b.unit));
+    Ok(entries
+        .into_iter()
+        .map(|entry| {
+            let tasks = digests
+                .entry(entry.task_paths.clone())
+                .or_insert_with(|| {
+                    let paths: Vec<PathBuf> = entry.task_paths.iter().map(PathBuf::from).collect();
+                    task::load_suite(root, &paths)
+                        .ok()
+                        .map(|tasks| ledger::tasks_digest(root, &tasks))
+                })
+                .clone();
+            let status = ledger::status(&entry, inventory, &today, tasks.as_deref());
+            (entry, status)
+        })
+        .collect())
 }
 
 /// Scans the configuration in the working tree of the repository at
@@ -43,7 +82,12 @@ pub(crate) fn scan(root: &Path) -> Result<Scan, Error> {
             read: &read,
         },
     );
-    Ok(Scan { inventory, smells })
+    let verdicts = verdicts(root, &config, &inventory)?;
+    Ok(Scan {
+        inventory,
+        smells,
+        verdicts,
+    })
 }
 
 /// `count` with a comma between each three digits.
@@ -106,11 +150,60 @@ fn file_heading(info: &FileInfo, units: &[&Unit]) -> String {
     )
 }
 
+/// An advice as the reports print it.
+fn advice_name(advice: &str) -> &'static str {
+    match advice {
+        "keep" => "KEEP",
+        "removable" => "REMOVABLE",
+        _ => "NOT ENOUGH EVIDENCE",
+    }
+}
+
+/// The verdicts `tune prune` wrote down, one a line; nothing when there
+/// are none.
+fn verdict_lines(verdicts: &[(Entry, Status)]) -> String {
+    if verdicts.is_empty() {
+        return String::new();
+    }
+    let width = verdicts
+        .iter()
+        .map(|(entry, _)| entry.unit.chars().count())
+        .max()
+        .unwrap_or(0);
+    let mut out = format!("\nVerdicts ({}): {}\n", ledger::LEDGER_PATH, verdicts.len());
+    for (entry, status) in verdicts {
+        let holds = if !status.stale.is_empty() {
+            format!("stale: {}", status.stale.join("; "))
+        } else if let Some(now) = &status.now {
+            format!("current; the same text is now {now}")
+        } else if status.rest_changed {
+            "current; other units have changed since".to_owned()
+        } else {
+            "current".to_owned()
+        };
+        let _ = writeln!(
+            out,
+            "  {:<width$}  {:<19}  {:>9}  {holds}",
+            entry.unit,
+            advice_name(&entry.advice),
+            counted(usize::try_from(entry.pairs()).unwrap_or(usize::MAX), "pair"),
+        );
+    }
+    if verdicts.iter().any(|(_, status)| !status.stale.is_empty()) {
+        out.push_str(
+            "  A stale verdict says nothing about today's files; `tune prune` tests them again.\n",
+        );
+    }
+    out
+}
+
 /// The scan as text for a person.
 pub(crate) fn text(scan: &Scan) -> String {
     let inventory = &scan.inventory;
     if inventory.files.is_empty() {
-        return "No agent configuration found: no CLAUDE.md or AGENTS.md, and nothing under .claude/rules or .claude/skills.\n".to_owned();
+        let mut out = "No agent configuration found: no CLAUDE.md or AGENTS.md, and nothing under .claude/rules or .claude/skills.\n".to_owned();
+        out.push_str(&verdict_lines(&scan.verdicts));
+        return out;
     }
     let always: u64 = inventory.units.iter().map(|unit| unit.always_tokens).sum();
     let all: u64 = inventory.units.iter().map(|unit| unit.tokens).sum();
@@ -153,8 +246,9 @@ pub(crate) fn text(scan: &Scan) -> String {
         );
         let _ = writeln!(out, "  {place} [{}] {}", smell.code, smell.message);
     }
+    out.push_str(&verdict_lines(&scan.verdicts));
     out.push_str(
-        "\nToken counts are estimates. Nothing was run and no model was called.\nTo test whether a unit earns its place: tune ab --drop <UNIT>\n",
+        "\nToken counts are estimates. Nothing was run and no model was called.\nTo test whether a unit earns its place: tune ab --drop <UNIT>, or tune prune for all of them\n",
     );
     out
 }
@@ -174,6 +268,42 @@ fn load_members(load: &Load) -> [(&'static str, Out); 3] {
 
 fn line_number(line: usize) -> Out {
     Out::uint(u64::try_from(line).unwrap_or(u64::MAX))
+}
+
+/// The verdicts as the JSON document lists them.
+fn verdicts_json(verdicts: &[(Entry, Status)]) -> Out {
+    Out::Array(
+        verdicts
+            .iter()
+            .map(|(entry, status)| {
+                Out::Object(vec![
+                    ("unit", Out::str(&entry.unit)),
+                    ("advice", Out::str(&entry.advice)),
+                    (
+                        "status",
+                        Out::str(if status.stale.is_empty() {
+                            "current"
+                        } else {
+                            "stale"
+                        }),
+                    ),
+                    ("reasons", Out::strs(&status.stale)),
+                    ("rest_changed", Out::bool(status.rest_changed)),
+                    ("unit_now", Out::opt(status.now.as_deref(), Out::str)),
+                    ("pairs", Out::uint(entry.pairs())),
+                    ("only_baseline", Out::uint(entry.only_baseline)),
+                    ("only_variant", Out::uint(entry.only_variant)),
+                    ("margin", report::fraction(entry.margin)),
+                    ("agent", Out::str(&entry.agent)),
+                    (
+                        "agent_version",
+                        Out::opt(entry.agent_version.as_deref(), Out::str),
+                    ),
+                    ("experiment", Out::str(&entry.experiment)),
+                ])
+            })
+            .collect(),
+    )
 }
 
 /// The scan as one JSON document.
@@ -243,6 +373,7 @@ pub(crate) fn json(scan: &Scan) -> String {
         ("files", Out::Array(files)),
         ("units", Out::Array(units)),
         ("findings", Out::Array(findings)),
+        ("verdicts", verdicts_json(&scan.verdicts)),
         ("totals", totals),
     ])
     .render();

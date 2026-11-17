@@ -86,6 +86,14 @@ fn number(value: &JsonValue, member: &str) -> i64 {
     value.get(member).and_then(JsonValue::as_i64).unwrap_or(-1)
 }
 
+/// A number as the document writes it.
+fn raw_number(value: &JsonValue, member: &str) -> String {
+    match value.get(member) {
+        Some(JsonValue::Number(written)) => written.clone(),
+        _ => String::new(),
+    }
+}
+
 fn comparison<'a>(report: &'a JsonValue, label: &str) -> &'a JsonValue {
     report
         .get("comparisons")
@@ -246,6 +254,61 @@ fn few_pairs_are_not_enough_evidence_and_a_named_variant_is_compared() {
 }
 
 #[test]
+fn a_wider_margin_gives_a_verdict_from_the_same_trials() {
+    let dir = repo(CLAUDE, 7);
+    let mut args = vec![
+        "ab",
+        "--drop",
+        "CLAUDE.md#useless",
+        "--rounds",
+        "2",
+        "--jobs",
+        "4",
+        "--yes",
+        "--json",
+    ];
+    args.extend(AGENT_ARGS);
+    let narrow = tune(dir.path(), &args);
+    assert!(narrow.status.success(), "{}", stderr(&narrow));
+    let value = parse_strict(&stdout(&narrow)).expect("strict JSON");
+    let useless = comparison(&value, "without CLAUDE.md#useless");
+    assert_eq!(number(useless, "pairs"), 14);
+    assert_eq!(text(useless, "advice"), "inconclusive");
+    assert_eq!(raw_number(&value, "margin"), "0.1000");
+
+    // Twenty points: the 14 pairs that agree are enough, and nothing runs.
+    args.extend(["--margin", "20"]);
+    let wide = tune(dir.path(), &args);
+    assert!(wide.status.success(), "{}", stderr(&wide));
+    let value = parse_strict(&stdout(&wide)).expect("strict JSON");
+    assert_eq!(number(&value, "trials_run"), 0);
+    let useless = comparison(&value, "without CLAUDE.md#useless");
+    assert_eq!(text(useless, "verdict"), "no_worse");
+    assert_eq!(text(useless, "advice"), "removable");
+    assert_eq!(raw_number(&value, "margin"), "0.2000");
+
+    let as_text: Vec<&str> = args
+        .iter()
+        .copied()
+        .filter(|arg| *arg != "--json")
+        .collect();
+    let said = tune(dir.path(), &as_text);
+    assert!(
+        stdout(&said).contains("at most 19.3 points lower"),
+        "{}",
+        stdout(&said)
+    );
+
+    for wrong in ["0", "51", "ten", "-5"] {
+        let mut bad = args.clone();
+        bad.pop();
+        bad.push(wrong);
+        let output = tune(dir.path(), &bad);
+        assert_eq!(output.status.code(), Some(2), "--margin {wrong}");
+    }
+}
+
+#[test]
 fn the_budget_stops_the_run_and_a_larger_one_continues_it() {
     let dir = repo(CLAUDE, 2);
     // 3 arms x 2 tasks x 3 rounds at $0.50 a trial would be $9.
@@ -331,6 +394,42 @@ fn the_plan_is_shown_first_and_nothing_runs_without_a_yes() {
             .any(|entry| entry.path().join("runs").exists())
     });
     assert!(!ran, "trials ran without a yes");
+}
+
+#[test]
+fn the_experiment_is_the_same_from_a_subdirectory_and_new_when_a_task_changes() {
+    let dir = repo(CLAUDE, 1);
+    write(dir.path(), "src/lib.rs", "");
+    let id = |cwd: &Path| {
+        let plan = tune(
+            cwd,
+            &[
+                "ab",
+                "--drop",
+                "CLAUDE.md#useless",
+                "--dry-run",
+                "--agent-cmd",
+                "sh agent.sh",
+            ],
+        );
+        assert!(plan.status.success(), "{}", stderr(&plan));
+        let shown = stdout(&plan);
+        let name = shown
+            .strip_prefix("Experiment ")
+            .and_then(|rest| rest.split(':').next())
+            .unwrap_or_else(|| panic!("no experiment in:\n{shown}"));
+        name.to_owned()
+    };
+    let at_root = id(dir.path());
+    assert_eq!(id(&dir.path().join("src")), at_root);
+    write(
+        dir.path(),
+        "evals/t1.json",
+        r#"{"schema": "tune.task.v1", "prompt": "another task",
+            "check": {"argv": ["sh", "check.sh"], "timeout_secs": 20}}"#,
+    );
+    assert_ne!(id(&dir.path().join("src")), at_root);
+    assert_ne!(id(dir.path()), at_root);
 }
 
 #[test]

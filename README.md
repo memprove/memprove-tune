@@ -16,8 +16,9 @@ own tests decide.
   before anything runs, and a run stops at the cap you set.
 - **Nothing leaves your machine** except what your agent itself sends.
 
-Status: early. `scan` and `ab` work and are tested with scripted agents;
-the agent supported for real runs is Claude Code.
+Status: early. `scan`, `ab` and `prune` work and are tested with scripted
+agents; the agent supported for real runs is Claude Code, and no real run
+has been made yet.
 
 ## Build
 
@@ -78,6 +79,48 @@ Besides `--drop UNIT` a variant can be `--replace PATH=FILE`,
 `--add PATH=FILE`, `--bare` (no configuration at all) or several changes
 under one name with `--variant`. `tune ab --help` lists every option.
 
+## Prune the whole configuration
+
+`tune prune` does the same for every unit at once and writes the change as
+a patch. It drops each unit alone, then drops everything that came out
+removable together and checks that against today's configuration, on tasks
+the search did not use when there are four or more. This run is from a
+scripted agent that reports $0.50 a trial:
+
+```console
+$ tune prune --agent-cmd 'sh agent.sh' --max-cost 100
+Prune: 3 units, each dropped alone, on 5 tasks x 6 rounds = 30 pairs a unit. A REMOVABLE verdict at a margin of 10 points needs 29 pairs that agree.
+  units, largest first: CLAUDE.md#useful (11 tokens); CLAUDE.md#useless (9 tokens); CLAUDE.md#harmful (4 tokens)
+  held out for the final check: t1
+Experiment 341378027086: 5 arms x 5 tasks x 6 rounds = 150 trials (0 done, 150 to run)
+  arms: baseline; control; without CLAUDE.md#useful; without CLAUDE.md#useless; without CLAUDE.md#harmful
+  ...
+Then the units that are not needed are dropped together and checked against the baseline on the held-out tasks: up to 12 more trials.
+Run it? [y/N]
+```
+
+and after the report of that experiment:
+
+```
+Pruned configuration: without CLAUDE.md#harmful and CLAUDE.md#useless (2 of 3 units; about 13 fewer tokens in every session).
+Checked on 1 held-out task x 6 rounds: the pruned configuration passed 6 of 6, the baseline 6 of 6 (experiment feb3ec8143e4).
+Patch: .tune/prune.patch (apply it with `git apply .tune/prune.patch`)
+Verdicts: .tune/verdicts.json (3 units)
+Spent $81.00 of the $100.00 cap in all.
+```
+
+Nothing in the repository is changed until you apply the patch. What was
+found for each unit is kept in `.tune/verdicts.json`, which is meant to be
+committed, and `tune scan` then shows every verdict and whether it still
+holds: a verdict goes stale when its unit's text or the task files change.
+
+The plan says how many pairs the run gives each unit and how many a
+REMOVABLE verdict needs, and, when the estimate is above the cap, how many
+units the cap pays for (`--top K` tests the K largest). Stopped at the
+cap, `prune` concludes nothing: no patch and no verdict; the trials are
+kept, and the same command with a larger cap goes on from there.
+`tune prune --help` lists every option.
+
 ## How a verdict is reached
 
 - Every trial starts from a clean copy of the repository at the task's
@@ -90,7 +133,8 @@ under one name with `--variant`. `tune ab --help` lists every option.
   one-sided to be chance (exact sign test, 5 %) and more than the control's.
 - It is **no worse** when its pass rate is at most 10 points below the
   baseline's with 95 % confidence (exact binomial bounds). That takes about
-  30 pairs that agree.
+  30 pairs that agree. `--margin POINTS` changes the 10: at 20 points 14
+  pairs are enough, at 5 it takes 59.
 - Anything else is **not enough evidence**. Running the same command again
   with a larger `--rounds` continues the experiment.
 
@@ -109,6 +153,12 @@ ENOUGH EVIDENCE.
   worth.
 - The spending cap is checked before each arm's round, so a run can pass
   it by at most the trials of one arm in one round.
+- `prune` tests each unit alone. Two units that say the same thing both
+  read removable; the final check catches that and writes no patch, and
+  `tune ab --variant` tests a combination by name.
+- A unit cannot show its worth on a task the agent fails with or without
+  it. Tasks the baseline mostly fails make everything look removable;
+  `prune` warns when the baseline passes fewer than half its trials.
 
 ## Where it comes from
 

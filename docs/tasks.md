@@ -56,3 +56,8 @@ A unit that matters shows with few pairs: five tasks that all fail without
 it are enough. Showing that a unit can go takes about 30 pairs that agree,
 for example 10 tasks in 3 rounds. `tune ab --dry-run` shows the number of
 trials and the estimated cost before anything runs.
+
+`tune prune` works out the rounds from the tasks it has, and with four or
+more tasks it keeps a quarter of them out of the search to check the result
+on. Tasks the agent fails with today's configuration tell it nothing: use
+tasks the baseline passes most of the time.

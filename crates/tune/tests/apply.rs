@@ -23,6 +23,7 @@ const AGENT: &str = r#"
 seen="$TUNE_TEST_SEEN"
 cat CLAUDE.md > "$seen/claude" 2>/dev/null
 ls .claude/rules > "$seen/rules" 2>/dev/null
+ls held > "$seen/held" 2>/dev/null
 git log --all --format=%s | wc -l | tr -d ' ' > "$seen/commits"
 git status --porcelain > "$seen/status"
 for object in $(git cat-file --batch-all-objects --batch-check | cut -d' ' -f1); do
@@ -33,8 +34,9 @@ grep -q 'write ok' CLAUDE.md && echo ok > answer.txt
 exit 0
 "#;
 
-#[test]
-fn the_agent_sees_the_arm_and_nothing_of_what_it_replaced() {
+/// A repository with old configuration, two files no trial may see, and
+/// one task.
+fn repo_with_secrets() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path();
     for args in [
@@ -48,6 +50,10 @@ fn the_agent_sees_the_arm_and_nothing_of_what_it_replaced() {
     write(root, "CLAUDE.md", "SECRET-OLD instructions\n");
     write(root, ".claude/rules/old.md", "SECRET-OLD rule\n");
     write(root, "agent.sh", AGENT);
+    // Files of the repository that no trial may see: another task and its
+    // hidden test.
+    write(root, "held/secret.json", "SECRET-HELD task\n");
+    write(root, "held/secret.patch", "SECRET-HELD test\n");
     git(root, &["add", "."]).expect("add");
     git(root, &["commit", "--quiet", "-m", "start"]).expect("commit");
     write(
@@ -56,11 +62,25 @@ fn the_agent_sees_the_arm_and_nothing_of_what_it_replaced() {
         r#"{"schema": "tune.task.v1", "prompt": "make the check pass",
             "check": {"argv": ["sh", "check.sh"], "timeout_secs": 20}}"#,
     );
+    dir
+}
 
-    let arm = tempfile::tempdir().expect("tempdir");
-    write(arm.path(), "CLAUDE.md", "Always write ok to answer.txt.\n");
-    write(arm.path(), ".claude/rules/new.md", "A new rule.\n");
+#[test]
+fn the_agent_sees_the_arm_and_nothing_of_what_it_replaced() {
+    let dir = repo_with_secrets();
+    let root = dir.path();
+
+    let arm_parent = tempfile::tempdir().expect("tempdir");
+    let arm = arm_parent.path().join("files");
+    write(&arm, "CLAUDE.md", "Always write ok to answer.txt.\n");
+    write(&arm, ".claude/rules/new.md", "A new rule.\n");
     let seen = tempfile::tempdir().expect("tempdir");
+    let hide = arm_parent.path().join("hide.txt");
+    fs::write(
+        &hide,
+        "held/secret.json\nheld/secret.patch\nheld/not-there\n",
+    )
+    .expect("hide list");
 
     let mut tasks = task::load_suite(root, &[root.join("evals")]).expect("tasks");
     for (task, _) in &mut tasks {
@@ -71,7 +91,9 @@ fn the_agent_sees_the_arm_and_nothing_of_what_it_replaced() {
                     env!("CARGO_BIN_EXE_tune").to_owned(),
                     "apply".to_owned(),
                     "--files".to_owned(),
-                    arm.path().to_string_lossy().into_owned(),
+                    arm.to_string_lossy().into_owned(),
+                    "--hide".to_owned(),
+                    hide.to_string_lossy().into_owned(),
                 ],
                 timeout: Duration::from_secs(60),
             },
@@ -112,6 +134,11 @@ fn the_agent_sees_the_arm_and_nothing_of_what_it_replaced() {
     assert_eq!(read("commits"), "1\n");
     assert_eq!(read("status"), "", "the working copy starts clean");
     assert_eq!(read("reflog"), "");
+    assert_eq!(read("held"), "", "a hidden file is in the working copy");
+    assert!(
+        !read("objects").contains("SECRET-HELD"),
+        "a hidden file is still in the repository's objects"
+    );
     assert!(read("objects").contains("A new rule."));
     assert!(
         !read("objects").contains("SECRET-OLD"),
