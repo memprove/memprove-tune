@@ -5,7 +5,7 @@ use std::{path::Path, time::Duration};
 
 use crate::{
     CommandSpec, TASK_SCHEMA, Task,
-    detect::{Detected, detect},
+    detect::detect,
     json::{Out, string},
 };
 
@@ -77,10 +77,9 @@ pub(crate) fn slashed(path: &Path) -> String {
         .join("/")
 }
 
-/// The setup commands of `found` as task commands.
-pub(crate) fn setup_commands(found: &Detected) -> Vec<CommandSpec> {
-    found
-        .setup
+/// The setup commands `setup` as task commands.
+pub(crate) fn setup_commands(setup: &[Vec<String>]) -> Vec<CommandSpec> {
+    setup
         .iter()
         .map(|argv| CommandSpec {
             argv: argv.clone(),
@@ -92,7 +91,7 @@ pub(crate) fn setup_commands(found: &Detected) -> Vec<CommandSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::detect::ProjectKind;
+    use crate::detect::{Detected, ProjectKind};
 
     #[test]
     fn a_task_renders_its_members_in_the_format_order() {
@@ -108,7 +107,7 @@ mod tests {
             title: Some("the test suite passes".to_owned()),
             base: None,
             prompt: "Make the tests pass.".to_owned(),
-            setup: setup_commands(&found),
+            setup: setup_commands(&found.setup),
             check: CommandSpec {
                 argv: found.check.clone(),
                 timeout: CHECK_TIMEOUT,

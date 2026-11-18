@@ -31,6 +31,11 @@ pub(crate) struct Options {
     /// Keep a task only when its tests fail before its commit and pass
     /// after it.
     pub(crate) verify: bool,
+    /// The commands a fresh checkout needs before its tests can run,
+    /// instead of the guess; none keeps the guess.
+    pub(crate) setup: Vec<Vec<String>>,
+    /// The test command, instead of the guess.
+    pub(crate) test: Option<Vec<String>>,
     /// Say what would be written, and write nothing.
     pub(crate) dry_run: bool,
     /// Print the report as JSON.
@@ -195,6 +200,10 @@ pub(crate) fn run(options: &Options, cwd: &Path, out: &mut dyn Write) -> Result<
     }
     spec.dry_run = options.dry_run;
     spec.verify = options.verify;
+    if !options.setup.is_empty() {
+        spec.setup = Some(options.setup.clone());
+    }
+    spec.test.clone_from(&options.test);
     if options.verify && !options.dry_run {
         eprintln!(
             "memprove-tune: running each task's tests before and after its commit; this can take a while"
@@ -237,6 +246,8 @@ mod tests {
             range: None,
             out: None,
             verify: false,
+            setup: Vec::new(),
+            test: None,
             dry_run: false,
             json: false,
         }

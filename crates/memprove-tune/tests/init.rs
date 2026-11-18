@@ -281,6 +281,95 @@ fn verify_keeps_only_tasks_that_fail_before_and_pass_after() {
     assert!(said.contains(&format!("mined-{}", h.four)), "{said}");
 }
 
+/// The words of each command of the member `member` of a task file (an
+/// object for `check`, a list of objects for `setup`).
+fn argvs(task: &JsonValue, member: &str) -> Vec<Vec<String>> {
+    let words = |command: &JsonValue| -> Vec<String> {
+        list(command, "argv")
+            .iter()
+            .filter_map(JsonValue::as_str)
+            .map(str::to_owned)
+            .collect()
+    };
+    match task.get(member) {
+        Some(JsonValue::Array(commands)) => commands.iter().map(words).collect(),
+        Some(command) => vec![words(command)],
+        None => Vec::new(),
+    }
+}
+
+#[test]
+fn the_setup_and_test_commands_can_be_given() {
+    let h = history();
+    let root = h.dir.path();
+    // The commands that are given are the ones --verify runs: `make test`
+    // would find no Makefile rule for this, and the tasks are kept.
+    let output = tune(
+        root,
+        &[
+            "init",
+            "--verify",
+            "--setup",
+            "cp src/lib.txt prepared.txt",
+            "--setup",
+            "true",
+            "--test",
+            "sh  tests/run.sh",
+            "--json",
+        ],
+    );
+    assert!(output.status.success(), "{}", stderr(&output));
+    let value = parse_strict(&stdout(&output)).expect("strict JSON");
+    assert_eq!(number(&value, "written"), 2);
+    let check: Vec<&str> = list(&list(&value, "tasks")[0], "check")
+        .iter()
+        .filter_map(JsonValue::as_str)
+        .collect();
+    assert_eq!(check, ["sh", "tests/run.sh"]);
+
+    let text = fs::read_to_string(root.join(format!(".tune/tasks/mined-{}.json", h.two)))
+        .expect("task file");
+    let task = parse_strict(&text).expect("strict JSON");
+    assert_eq!(
+        argvs(&task, "setup"),
+        [vec!["cp", "src/lib.txt", "prepared.txt"], vec!["true"]]
+    );
+    assert_eq!(argvs(&task, "check"), [["sh", "tests/run.sh"]]);
+
+    // A setup command that fails is why a task is refused, so it was run.
+    let failing = tune(
+        root,
+        &[
+            "init",
+            "--verify",
+            "--out",
+            "evals/failing",
+            "--setup",
+            "false",
+            "--json",
+        ],
+    );
+    assert!(failing.status.success(), "{}", stderr(&failing));
+    let value = parse_strict(&stdout(&failing)).expect("strict JSON");
+    assert_eq!(number(&value, "written"), 0);
+
+    let help = tune(root, &["init", "--help"]);
+    let said = stdout(&help);
+    assert!(said.contains("--setup"), "{said}");
+    assert!(said.contains("--test"), "{said}");
+
+    // A command needs words.
+    for option in ["--setup", "--test"] {
+        let output = tune(root, &["init", option, " "]);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(
+            stderr(&output).contains(&format!("`{option}` needs a command")),
+            "{}",
+            stderr(&output)
+        );
+    }
+}
+
 #[test]
 fn a_dry_run_and_a_limit() {
     let h = history();
@@ -324,6 +413,7 @@ fn what_cannot_be_done_is_said() {
         &["init", "--range", "--all"],
         &["init", "--tasks", "evals"],
         &["init", "--out", "/elsewhere"],
+        &["init", "--test"],
     ] {
         let output = tune(root, args);
         assert_eq!(

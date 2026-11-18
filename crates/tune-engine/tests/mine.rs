@@ -377,6 +377,116 @@ fn mine_needs_a_test_command() {
     repo.commit("a");
     let error = mine(&MineSpec::new(repo.root())).expect_err("no test command");
     assert!(error.to_string().contains("no test command"), "{error}");
+    // It says how to give one.
+    assert!(error.to_string().contains("--test"), "{error}");
+}
+
+/// The members `setup` and `check` of the task file `path` as argv lists.
+fn commands(root: &Path, path: &Path) -> (Vec<Vec<String>>, Vec<String>) {
+    let text = fs::read_to_string(root.join(path)).expect("task file");
+    let value = parse(&text, None).expect("json");
+    let argv = |value: &tune_engine::json::JsonValue| -> Vec<String> {
+        Reader::new(value, None, "")
+            .expect("object")
+            .strs("argv")
+            .expect("argv")
+    };
+    let setup = value
+        .get("setup")
+        .and_then(|setup| setup.as_array())
+        .map(|commands| commands.iter().map(argv).collect())
+        .unwrap_or_default();
+    (setup, argv(value.get("check").expect("check")))
+}
+
+#[test]
+fn a_uv_project_installs_and_tests_through_uv() {
+    let mut repo = Repo::new();
+    repo.write("pyproject.toml", "[project]\nname = \"p\"\n");
+    repo.write("uv.lock", "version = 1\n");
+    repo.write("src/p.py", "A = 1\n");
+    repo.commit("init");
+    repo.append("src/p.py", "B = 2\n");
+    repo.write("tests/test_p.py", "def test_b():\n    pass\n");
+    repo.commit("p: B");
+    let tasks = mine(&MineSpec::new(repo.root())).expect("uv");
+    let expected = ["uv", "run", "--frozen", "pytest", "tests/test_p.py"];
+    assert_eq!(tasks[0].check, expected);
+    let (setup, check) = commands(repo.root(), &tasks[0].path);
+    assert_eq!(setup, [["uv", "sync", "--frozen"]]);
+    assert_eq!(check, expected);
+}
+
+fn words(command: &[&str]) -> Vec<String> {
+    command.iter().map(|word| (*word).to_owned()).collect()
+}
+
+#[test]
+fn the_setup_and_test_commands_that_are_given_replace_the_guess() {
+    let h = history();
+    let tasks = mine(&MineSpec {
+        setup: Some(vec![words(&["touch", ".prepared"]), words(&["true"])]),
+        test: Some(words(&["sh", "tests/run.sh"])),
+        ..MineSpec::new(h.repo.root())
+    })
+    .expect("mine");
+    let two = tasks.iter().find(|task| task.commit == h.two).expect("two");
+    assert_eq!(two.check, ["sh", "tests/run.sh"]);
+    let (setup, check) = commands(h.repo.root(), &two.path);
+    assert_eq!(setup, [vec!["touch", ".prepared"], vec!["true"]]);
+    assert_eq!(check, ["sh", "tests/run.sh"]);
+}
+
+#[test]
+fn a_given_test_command_keeps_the_setup_that_was_guessed() {
+    let mut repo = Repo::new();
+    repo.write(
+        "package.json",
+        "{\"scripts\": {\"test\": \"node test.js\"}}\n",
+    );
+    repo.write("package-lock.json", "{}\n");
+    repo.write("src/a.js", "exports.a = 1;\n");
+    repo.commit("init");
+    repo.append("src/a.js", "exports.b = 2;\n");
+    repo.write("test/a.test.js", "require('../src/a.js');\n");
+    repo.commit("a: b");
+    let tasks = mine(&MineSpec {
+        test: Some(words(&["npx", "vitest", "run"])),
+        ..MineSpec::new(repo.root())
+    })
+    .expect("mine");
+    let (setup, check) = commands(repo.root(), &tasks[0].path);
+    assert_eq!(setup, [["npm", "ci"]]);
+    assert_eq!(check, ["npx", "vitest", "run"]);
+}
+
+#[test]
+fn a_given_pytest_command_narrows_to_the_changed_tests_without_a_project_file() {
+    let mut repo = Repo::new();
+    repo.write("src/p.py", "A = 1\n");
+    repo.commit("init");
+    repo.append("src/p.py", "B = 2\n");
+    repo.write("tests/test_p.py", "def test_b():\n    pass\n");
+    repo.commit("p: B");
+    let tasks = mine(&MineSpec {
+        dry_run: true,
+        test: Some(words(&["uv", "run", "pytest", "-q"])),
+        ..MineSpec::new(repo.root())
+    })
+    .expect("no project file is needed");
+    assert_eq!(
+        tasks[0].check,
+        ["uv", "run", "pytest", "-q", "tests/test_p.py"]
+    );
+
+    // A command that does not run pytest is taken as it is.
+    let tasks = mine(&MineSpec {
+        dry_run: true,
+        test: Some(words(&["sh", "run-tests.sh"])),
+        ..MineSpec::new(repo.root())
+    })
+    .expect("as given");
+    assert_eq!(tasks[0].check, ["sh", "run-tests.sh"]);
 }
 
 #[test]

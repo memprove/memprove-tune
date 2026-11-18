@@ -134,6 +134,13 @@ onboarding skill) for the public release; `optimize` (v2).
   parent, prompt = its message without trailers, check = the detected test
   command narrowed to the changed tests, hidden tests = the commit's diff
   of its test files.
+- **The guess can be replaced.** A Python project with a `uv.lock` is
+  set up with `uv sync --frozen` and tested with `uv run --frozen pytest`.
+  `--setup "CMD"` (repeatable) and `--test "CMD"` replace the guessed
+  commands; the words are split at spaces, with no quoting. A given test
+  command with the word `pytest` still gets the changed test files
+  appended; any other is every task's check as it is, and a given test
+  command needs no project file. `--test` alone keeps the guessed setup.
 - **`--verify` is optional and free of model cost.** It runs setup and
   check in two worktrees per task and keeps a task only when the check
   fails before the commit and passes after it. Without it the report says
@@ -173,8 +180,9 @@ onboarding skill) for the public release; `optimize` (v2).
   work from, and then no arm passes the task. `init` says so; nothing
   checks it.
 - `init` guesses one test command for the repository (Cargo, npm, pytest,
-  go, make). A repository with several, or with none of these, needs task
-  files written by hand.
+  go, make), or takes one from `--test` (and what a fresh checkout needs
+  first from `--setup`). A repository with several test commands needs
+  task files written by hand.
 - `scan` findings are heuristics. They prefer saying nothing to saying
   something wrong, so they miss things.
 

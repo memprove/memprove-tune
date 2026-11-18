@@ -7,7 +7,9 @@ that was added, each with the test that proves it.
 
 `memprove-tune init` writes the first task files from your history (a commit that
 changed a test and code becomes a task); `memprove-tune init --verify` keeps only
-those whose check fails before the commit and passes after it. Read what it
+those whose check fails before the commit and passes after it. When it
+guesses your test command wrong, give it: `--test "uv run pytest"`, and
+`--setup "uv sync"` for what a fresh checkout needs first. Read what it
 wrote, and add tasks by hand for work the history does not show.
 
 Put task files under `.tune/tasks/` (or pass `--tasks PATH`). One JSON file

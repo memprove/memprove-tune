@@ -19,7 +19,8 @@ use std::{
 };
 
 use crate::{
-    CommandSpec, EvalError, Task, detect,
+    CommandSpec, EvalError, Task,
+    detect::{self, ProjectKind},
     git::git,
     taskfile::{self, AGENT_TIMEOUT, CHECK_TIMEOUT},
 };
@@ -42,6 +43,13 @@ pub struct MineSpec {
     /// check patch applied and passes on the commit: each candidate is
     /// tried in two worktrees, setup and check run in each.
     pub verify: bool,
+    /// The commands a fresh worktree needs before the tests can run,
+    /// instead of the guess; `None` keeps the guess.
+    pub setup: Option<Vec<Vec<String>>>,
+    /// The test command, instead of the guess; `None` keeps the guess. A
+    /// command with the word `pytest` still gets the test files a commit
+    /// changed appended; any other is every task's check as it is.
+    pub test: Option<Vec<String>>,
 }
 
 impl MineSpec {
@@ -56,6 +64,8 @@ impl MineSpec {
             out_dir: PathBuf::from(taskfile::TASKS_DIR),
             dry_run: false,
             verify: false,
+            setup: None,
+            test: None,
         }
     }
 }
@@ -94,23 +104,15 @@ pub struct MinedTask {
 /// Writes tasks mined from history.
 ///
 /// # Errors
-/// [`EvalError::Usage`] for a `range` that starts with `-` or an absolute
-/// `out_dir` outside the root; [`EvalError::Invalid`] when no test command
-/// can be guessed (see [`detect::detect`]); [`EvalError::Git`] or
+/// [`EvalError::Usage`] for a `range` that starts with `-`, an absolute
+/// `out_dir` outside the root or a given command without words;
+/// [`EvalError::Invalid`] when no test command is given and none can be
+/// guessed (see [`detect::detect`]); [`EvalError::Git`] or
 /// [`EvalError::Io`] when `git` fails or a file cannot be written.
 pub fn mine(spec: &MineSpec) -> Result<Vec<MinedTask>, EvalError> {
     let root = &spec.repo_root;
     let out_dir = relative_out_dir(root, &spec.out_dir)?;
-    let detected = detect::detect(root).ok_or_else(|| {
-        EvalError::invalid(
-            None,
-            format!(
-                "no test command was found in {} to judge tasks with ({}); write the task files by hand: a prompt and a check command each",
-                root.display(),
-                detect::ORDER
-            ),
-        )
-    })?;
+    let commands = commands(spec)?;
     let commits = history::commits(root, spec.range.as_deref())?;
     let verifier = spec
         .verify
@@ -133,13 +135,10 @@ pub fn mine(spec: &MineSpec) -> Result<Vec<MinedTask>, EvalError> {
         let id = format!("mined-{}", &commit[..7.min(commit.len())]);
         let task_path = out_dir.join(format!("{id}.json"));
         let patch_path = out_dir.join(format!("{id}.check.patch"));
-        let check = narrow::narrow(
-            root,
-            &commit,
-            detected.kind,
-            &detected.check,
-            &candidate.tests,
-        );
+        let check = match commands.narrow_as {
+            Some(kind) => narrow::narrow(root, &commit, kind, &commands.check, &candidate.tests),
+            None => commands.check.clone(),
+        };
         let mut mined = MinedTask {
             id: id.clone(),
             commit: commit.clone(),
@@ -159,7 +158,7 @@ pub fn mine(spec: &MineSpec) -> Result<Vec<MinedTask>, EvalError> {
                 title: Some(candidate.subject.clone()),
                 base: Some(parent.clone()),
                 prompt: candidate.prompt.clone(),
-                setup: taskfile::setup_commands(&detected),
+                setup: taskfile::setup_commands(&commands.setup),
                 check: CommandSpec {
                     argv: check,
                     timeout: CHECK_TIMEOUT,
@@ -198,6 +197,61 @@ pub fn mine(spec: &MineSpec) -> Result<Vec<MinedTask>, EvalError> {
         let _ = fs::remove_dir_all(verifier.scratch.join("worktrees"));
     }
     Ok(found)
+}
+
+/// How the tasks install and test: what was given, else the guess.
+struct Commands {
+    /// What a fresh worktree needs before the tests can run.
+    setup: Vec<Vec<String>>,
+    /// The repository's test command.
+    check: Vec<String>,
+    /// The kind of project `check` is narrowed as; `None` leaves it as it
+    /// is.
+    narrow_as: Option<ProjectKind>,
+}
+
+fn commands(spec: &MineSpec) -> Result<Commands, EvalError> {
+    let no_words = |what: &str| EvalError::Usage(format!("the {what} command has no words"));
+    if spec.test.as_ref().is_some_and(Vec::is_empty) {
+        return Err(no_words("test"));
+    }
+    if spec
+        .setup
+        .as_ref()
+        .is_some_and(|setup| setup.iter().any(Vec::is_empty))
+    {
+        return Err(no_words("setup"));
+    }
+    let root = &spec.repo_root;
+    let detected = detect::detect(root);
+    let (check, narrow_as) = match (&spec.test, &detected) {
+        (Some(test), _) => (
+            test.clone(),
+            test.iter()
+                .any(|word| word == "pytest")
+                .then_some(ProjectKind::Python),
+        ),
+        (None, Some(found)) => (found.check.clone(), Some(found.kind)),
+        (None, None) => {
+            return Err(EvalError::invalid(
+                None,
+                format!(
+                    "no test command was found in {} to judge tasks with ({}); give it with `--test`, or write the task files by hand: a prompt and a check command each",
+                    root.display(),
+                    detect::ORDER
+                ),
+            ));
+        }
+    };
+    let setup = match &spec.setup {
+        Some(setup) => setup.clone(),
+        None => detected.map(|found| found.setup).unwrap_or_default(),
+    };
+    Ok(Commands {
+        setup,
+        check,
+        narrow_as,
+    })
 }
 
 /// Checks a task against a reference answer the way `--verify` does: in a

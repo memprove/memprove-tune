@@ -69,13 +69,26 @@ Options:
                            the commit and passes after it; runs the
                            repository's tests twice for each task, calls
                            no model and costs nothing but time
+  --setup \"CMD\"            a command a fresh checkout needs before its
+                           tests can run, instead of the guess; give the
+                           option again for each further command
+  --test \"CMD\"             the repository's test command, instead of the
+                           guess; when it runs pytest, each task still
+                           gets only the test files its commit changed
   --dry-run                list what would be written and write nothing
   --json                   print the report as JSON
 
 A task file that is already there is never written again. The test
-command is guessed from Cargo.toml, package.json, pyproject.toml, go.mod
-or a Makefile with a test target; when there is none, write the task
-files by hand. One holds a prompt and a check command:
+command is guessed from Cargo.toml, package.json, pyproject.toml (run
+through uv when there is a uv.lock), go.mod or a Makefile with a test
+target. When the guess is wrong or there is none, give the commands:
+
+  memprove-tune init --setup \"uv sync --frozen --all-extras\" \\
+                     --test \"uv run --frozen pytest\"
+
+CMD is split into words at spaces and is not a shell line: there is no
+quoting, so put anything longer into a script. Or write the task files
+by hand. One holds a prompt and a check command:
 
   {\"schema\": \"tune.task.v1\",
    \"prompt\": \"Round parcel weights up to the next 100 g.\",
@@ -289,6 +302,21 @@ fn value(arg: &str, rest: &mut Rest<'_>) -> Result<String, Error> {
         .ok_or_else(|| Error::Usage(format!("`{arg}` needs a value")))
 }
 
+/// The command that follows the option `arg`, as its words: split at
+/// white space, with no quoting.
+fn command(arg: &str, rest: &mut Rest<'_>) -> Result<Vec<String>, Error> {
+    let words: Vec<String> = value(arg, rest)?
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect();
+    if words.is_empty() {
+        return Err(Error::Usage(format!(
+            "`{arg}` needs a command, like \"uv run pytest\""
+        )));
+    }
+    Ok(words)
+}
+
 /// The whole number above 0 that follows the option `arg`.
 fn number(arg: &str, rest: &mut Rest<'_>) -> Result<u32, Error> {
     value(arg, rest)?
@@ -438,6 +466,8 @@ fn init_command(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<(), 
         range: None,
         out: None,
         verify: false,
+        setup: Vec::new(),
+        test: None,
         dry_run: false,
         json: false,
     };
@@ -445,6 +475,8 @@ fn init_command(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<(), 
     while let Some(arg) = rest.next() {
         match arg.as_str() {
             "--help" | "-h" => return print(out, INIT_HELP),
+            "--setup" => options.setup.push(command(arg, &mut rest)?),
+            "--test" => options.test = Some(command(arg, &mut rest)?),
             "--limit" => options.limit = number(arg, &mut rest)? as usize,
             "--range" => options.range = Some(value(arg, &mut rest)?),
             "--out" => options.out = Some(value(arg, &mut rest)?.into()),

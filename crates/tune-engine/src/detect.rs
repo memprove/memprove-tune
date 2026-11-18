@@ -15,7 +15,8 @@ pub enum ProjectKind {
     /// `package.json` with `scripts.test`: `npm test`, `pnpm test` or
     /// `yarn test`.
     Node,
-    /// `pyproject.toml`, `pytest.ini` or `setup.cfg`: `python3 -m pytest`.
+    /// `pyproject.toml`, `pytest.ini` or `setup.cfg`: `python3 -m pytest`,
+    /// or `uv run --frozen pytest` with a `uv.lock`.
     Python,
     /// `go.mod`: `go test ./...`.
     Go,
@@ -50,7 +51,8 @@ pub struct Detected {
 ///    `yarn test` after `yarn install --frozen-lockfile` when there is a
 ///    `yarn.lock`, else `npm test` after `npm ci` (with a
 ///    `package-lock.json`) or `npm install`.
-/// 3. `pyproject.toml`, `pytest.ini` or `setup.cfg`: `python3 -m pytest`.
+/// 3. `pyproject.toml`, `pytest.ini` or `setup.cfg`: `python3 -m pytest`;
+///    with a `uv.lock`, `uv run --frozen pytest` after `uv sync --frozen`.
 /// 4. `go.mod`: `go test ./...`.
 /// 5. `Makefile` with a `test` target: `make test`.
 #[must_use]
@@ -126,12 +128,21 @@ fn python(root: &Path) -> Option<Detected> {
         .into_iter()
         .find(|name| root.join(name).is_file())
         .map(|marker| {
-            guess(
-                ProjectKind::Python,
-                marker,
-                &[],
-                &["python3", "-m", "pytest"],
-            )
+            if root.join("uv.lock").is_file() {
+                guess(
+                    ProjectKind::Python,
+                    marker,
+                    &[&["uv", "sync", "--frozen"]],
+                    &["uv", "run", "--frozen", "pytest"],
+                )
+            } else {
+                guess(
+                    ProjectKind::Python,
+                    marker,
+                    &[],
+                    &["python3", "-m", "pytest"],
+                )
+            }
         })
 }
 
@@ -175,5 +186,26 @@ mod tests {
         assert!(!has_test_target("\ttest: x"));
         assert!(!has_test_target("test-unit:"));
         assert!(!has_test_target("# test:"));
+    }
+
+    #[test]
+    fn a_python_project_with_a_uv_lockfile_is_tested_through_uv() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            dir.path().join("pyproject.toml"),
+            "[project]\nname = \"p\"\n",
+        )
+        .expect("write");
+        let plain = detect(dir.path()).expect("python");
+        assert_eq!(plain.kind, ProjectKind::Python);
+        assert_eq!(plain.check, ["python3", "-m", "pytest"]);
+        assert!(plain.setup.is_empty(), "{:?}", plain.setup);
+
+        fs::write(dir.path().join("uv.lock"), "version = 1\n").expect("write");
+        let uv = detect(dir.path()).expect("uv");
+        assert_eq!(uv.kind, ProjectKind::Python);
+        assert_eq!(uv.marker, "pyproject.toml");
+        assert_eq!(uv.setup, [["uv", "sync", "--frozen"]]);
+        assert_eq!(uv.check, ["uv", "run", "--frozen", "pytest"]);
     }
 }
