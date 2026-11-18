@@ -13,6 +13,7 @@ mod narrow;
 mod verify;
 
 use std::{
+    fmt::Write as _,
     fs,
     path::{Path, PathBuf},
     time::SystemTime,
@@ -24,6 +25,11 @@ use crate::{
     git::git,
     taskfile::{self, AGENT_TIMEOUT, CHECK_TIMEOUT},
 };
+
+/// With `--verify`: after this many commits in a row whose setup fails, no
+/// further commit is tried. The setup is what is wrong then, and every
+/// other commit would be refused for it too, two worktrees each.
+const SETUP_FAILURES_IN_A_ROW: usize = 3;
 
 /// What `mine` was asked to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,6 +135,7 @@ pub fn mine(spec: &MineSpec) -> Result<Vec<MinedTask>, EvalError> {
 
     let mut found = Vec::new();
     let mut counted = 0;
+    let mut setup_failures = 0;
     for (commit, parent) in commits {
         if counted >= spec.limit {
             break;
@@ -175,19 +182,11 @@ pub fn mine(spec: &MineSpec) -> Result<Vec<MinedTask>, EvalError> {
                 tags: vec!["mined".to_owned()],
                 source: task_path.clone(),
             };
-            if let Some(verifier) = &verifier {
-                let staged = verifier.scratch.join(format!("{}.check.patch", task.id));
-                write(&staged, &patch)?;
-                if let Some(reason) = verifier.verify(
-                    &task.id,
-                    &parent,
-                    &commit,
-                    Some(&staged),
-                    &task.setup,
-                    &task.check,
-                )? {
-                    mined.status = MineStatus::Rejected(reason);
-                }
+            if let Some(verifier) = &verifier
+                && let Some(reason) =
+                    refused(verifier, &task, &commit, &patch, &mut setup_failures)?
+            {
+                mined.status = MineStatus::Rejected(reason);
             }
             if mined.status == MineStatus::Written {
                 write(&root.join(&patch_path), &patch)?;
@@ -198,12 +197,53 @@ pub fn mine(spec: &MineSpec) -> Result<Vec<MinedTask>, EvalError> {
             counted += 1;
         }
         found.push(mined);
+        if setup_failures >= SETUP_FAILURES_IN_A_ROW {
+            break;
+        }
     }
     if let Some(verifier) = &verifier {
         let _ = git(root, &["worktree", "prune"]);
         let _ = fs::remove_dir_all(verifier.scratch.join("worktrees"));
     }
     Ok(found)
+}
+
+/// Verifies the mined `task` (made from `commit`, with the hidden tests
+/// `patch`) and says why it is refused, when it is. `setup_failures`
+/// counts the commits in a row whose setup failed; the reason of the one
+/// that reaches [`SETUP_FAILURES_IN_A_ROW`] says that no further commit is
+/// tried.
+fn refused(
+    verifier: &verify::Verifier<'_>,
+    task: &Task,
+    commit: &str,
+    patch: &str,
+    setup_failures: &mut usize,
+) -> Result<Option<String>, EvalError> {
+    let staged = verifier.scratch.join(format!("{}.check.patch", task.id));
+    write(&staged, patch)?;
+    let refusal = verifier.verify(
+        &task.id,
+        task.base.as_deref().unwrap_or("HEAD"),
+        commit,
+        Some(&staged),
+        &task.setup,
+        &task.check,
+    )?;
+    *setup_failures = match &refusal {
+        Some(refusal) if refusal.setup_failed => *setup_failures + 1,
+        _ => 0,
+    };
+    Ok(refusal.map(|refusal| {
+        let mut reason = refusal.reason;
+        if *setup_failures == SETUP_FAILURES_IN_A_ROW {
+            let _ = write!(
+                reason,
+                "; the setup failed on {SETUP_FAILURES_IN_A_ROW} commits in a row, so no further commit was tried: read the log, and give what a fresh checkout needs with --setup"
+            );
+        }
+        reason
+    }))
 }
 
 /// How the tasks install and test: what was given, else the guess.
@@ -284,14 +324,16 @@ pub fn verify_task(
         scratch: scratch_dir(repo_root)?,
     };
     let patch = task.check_patch.as_ref().map(|patch| repo_root.join(patch));
-    let reason = verifier.verify(
-        &task.id,
-        &base,
-        &reference,
-        patch.as_deref(),
-        &task.setup,
-        &task.check,
-    );
+    let reason = verifier
+        .verify(
+            &task.id,
+            &base,
+            &reference,
+            patch.as_deref(),
+            &task.setup,
+            &task.check,
+        )
+        .map(|refusal| refusal.map(|refusal| refusal.reason));
     let _ = git(repo_root, &["worktree", "prune"]);
     let _ = fs::remove_dir_all(verifier.scratch.join("worktrees"));
     reason

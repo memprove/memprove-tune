@@ -149,6 +149,8 @@ onboarding skill) for the public release; `optimize` (v2).
   check in two worktrees per task and keeps a task only when the check
   fails before the commit and passes after it. Without it the report says
   that the tasks were not run.
+  When the setup fails on three commits in a row it stops there: the
+  setup is what is wrong, and `--setup` is how to give the right one.
 - **Old commits, today's configuration.** A mined task starts from a
   commit that may be older than the configuration; the experiment lays
   today's configuration over it, as for any task.

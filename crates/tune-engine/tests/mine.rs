@@ -314,6 +314,33 @@ fn verify_keeps_only_tasks_that_fail_before_and_pass_after() {
 }
 
 #[test]
+fn verify_stops_when_the_setup_fails_on_three_commits_in_a_row() {
+    // Four commits could become tasks; with a setup command that cannot
+    // work, the fourth is not tried.
+    let h = history();
+    let tasks = mine(&MineSpec {
+        verify: true,
+        setup: Some(vec![words(&["false"])]),
+        ..MineSpec::new(h.repo.root())
+    })
+    .expect("mine");
+    assert_eq!(ids(&tasks), [id(&h.five), id(&h.four), id(&h.weaker)]);
+    let reasons: Vec<&str> = tasks
+        .iter()
+        .map(|task| match &task.status {
+            MineStatus::Rejected(reason) => reason.as_str(),
+            other => panic!("not refused: {other:?}"),
+        })
+        .collect();
+    assert!(reasons[0].contains("setup `false` exited 1"), "{reasons:?}");
+    assert!(!reasons[1].contains("in a row"), "{reasons:?}");
+    assert!(
+        reasons[2].contains("3 commits in a row") && reasons[2].contains("--setup"),
+        "{reasons:?}"
+    );
+}
+
+#[test]
 fn a_hand_written_task_is_verified_against_a_reference_commit() {
     let mut repo = Repo::new();
     repo.write("Makefile", "test:\n\tsh tests/run.sh\n");
