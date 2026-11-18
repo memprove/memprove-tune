@@ -50,7 +50,8 @@ pub(super) fn commits(
 }
 
 /// `commit` as a candidate, or `None` when it is not one: it must change
-/// at least one test file and at least one file that is neither a test nor
+/// at least one test file that is not a document (a note beside the tests
+/// judges nothing) and at least one file that is neither a test nor
 /// documentation, at most [`MAX_FILES`] files and [`MAX_LINES`] lines in
 /// all, and have a subject.
 pub(super) fn candidate(
@@ -81,7 +82,11 @@ pub(super) fn candidate(
             sources += 1;
         }
     }
-    if tests.is_empty() || sources == 0 || files > MAX_FILES || lines > MAX_LINES {
+    if tests.iter().all(|test| is_document(test))
+        || sources == 0
+        || files > MAX_FILES
+        || lines > MAX_LINES
+    {
         return Ok(None);
     }
     let subject = git(root, &["log", "-1", "--format=%s", commit])?
@@ -131,11 +136,16 @@ pub fn is_test_path(path: &str) -> bool {
 #[must_use]
 pub fn is_doc_path(path: &str) -> bool {
     let lower = path.to_ascii_lowercase();
-    lower.starts_with("docs/")
-        || lower.starts_with("doc/")
-        || [".md", ".markdown", ".rst", ".adoc"]
-            .iter()
-            .any(|suffix| lower.ends_with(suffix))
+    lower.starts_with("docs/") || lower.starts_with("doc/") || is_document(path)
+}
+
+/// Whether `path` is a Markdown, `reStructuredText` or `AsciiDoc` file,
+/// wherever it is.
+fn is_document(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    [".md", ".markdown", ".rst", ".adoc"]
+        .iter()
+        .any(|suffix| lower.ends_with(suffix))
 }
 
 /// `body` without its trailer block (a last paragraph whose every line is

@@ -490,6 +490,38 @@ fn a_given_pytest_command_narrows_to_the_changed_tests_without_a_project_file() 
 }
 
 #[test]
+fn a_commit_whose_only_test_file_is_documentation_is_passed_over() {
+    let mut repo = Repo::new();
+    repo.write("Makefile", "test:\n\tsh tests/run.sh\n");
+    repo.write("src/lib.txt", "one\n");
+    repo.write("tests/run.sh", "grep -qx one src/lib.txt\n");
+    repo.commit("lib: one");
+
+    // Continuous integration and a note beside the tests: nothing here
+    // judges an agent's work.
+    repo.write("ci/smoke.yml", "run: make test\n");
+    repo.write("tests/README.md", "The smoke job runs these.\n");
+    repo.commit("ci: run the tests in the smoke job");
+
+    // A test and a note beside it: a task, and the note stays among its
+    // hidden files.
+    repo.append("src/lib.txt", "two\n");
+    repo.append("tests/run.sh", "grep -qx two src/lib.txt\n");
+    repo.append("tests/README.md", "They look for two as well.\n");
+    let two = repo.commit("lib: add two");
+
+    let tasks = mine(&MineSpec::new(repo.root())).expect("mine");
+    assert_eq!(ids(&tasks), [id(&two)]);
+    let patch = fs::read_to_string(
+        repo.root()
+            .join(format!(".tune/tasks/{}.check.patch", id(&two))),
+    )
+    .expect("patch");
+    assert!(patch.contains("b/tests/run.sh"), "{patch}");
+    assert!(patch.contains("b/tests/README.md"), "{patch}");
+}
+
+#[test]
 fn rust_checks_narrow_to_the_package_and_its_integration_tests() {
     let mut repo = Repo::new();
     repo.write(
