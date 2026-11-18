@@ -75,6 +75,9 @@ Options:
   --test \"CMD\"             the repository's test command, instead of the
                            guess; when it runs pytest, each task still
                            gets only the test files its commit changed
+  --narrowed-only          pass over a commit whose check cannot be
+                           narrowed to the tests it changed: such a task
+                           runs the whole test suite in every trial
   --dry-run                list what would be written and write nothing
   --json                   print the report as JSON
 
@@ -468,6 +471,7 @@ fn init_command(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<(), 
         verify: false,
         setup: Vec::new(),
         test: None,
+        narrowed_only: false,
         dry_run: false,
         json: false,
     };
@@ -477,6 +481,7 @@ fn init_command(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<(), 
             "--help" | "-h" => return print(out, INIT_HELP),
             "--setup" => options.setup.push(command(arg, &mut rest)?),
             "--test" => options.test = Some(command(arg, &mut rest)?),
+            "--narrowed-only" => options.narrowed_only = true,
             "--limit" => options.limit = number(arg, &mut rest)? as usize,
             "--range" => options.range = Some(value(arg, &mut rest)?),
             "--out" => options.out = Some(value(arg, &mut rest)?.into()),

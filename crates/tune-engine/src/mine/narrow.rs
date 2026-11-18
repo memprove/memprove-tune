@@ -18,21 +18,21 @@ use crate::{detect::ProjectKind, git::git};
 ///   package directory of each (`./dir`).
 /// - Python: when every test file is a `.py` file that exists at
 ///   `commit`, the test command with those files appended.
-/// - Otherwise, and for Node and Make: `check` as it is.
+/// - Otherwise, and for Node and Make: `None`, and the task's check is
+///   `check` as it is.
 pub(super) fn narrow(
     root: &Path,
     commit: &str,
     kind: ProjectKind,
     check: &[String],
     tests: &[String],
-) -> Vec<String> {
-    let narrowed = match kind {
+) -> Option<Vec<String>> {
+    match kind {
         ProjectKind::Rust => rust(root, commit, tests),
         ProjectKind::Go => go(tests),
         ProjectKind::Python => python(root, commit, check, tests),
         ProjectKind::Node | ProjectKind::Make => None,
-    };
-    narrowed.unwrap_or_else(|| check.to_vec())
+    }
 }
 
 fn exists(root: &Path, commit: &str, path: &str) -> bool {

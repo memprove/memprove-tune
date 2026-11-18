@@ -371,6 +371,22 @@ fn the_setup_and_test_commands_can_be_given() {
 }
 
 #[test]
+fn narrowed_only_says_when_no_check_can_be_narrowed() {
+    // `make test` is never narrowed: every task here runs all the tests.
+    let h = history();
+    let root = h.dir.path();
+    let output = tune(root, &["init", "--narrowed-only", "--dry-run"]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let said = stdout(&output);
+    assert!(said.contains("No commit"), "{said}");
+    assert!(said.contains("--narrowed-only"), "{said}");
+    assert!(!root.join(".tune").exists());
+
+    let help = stdout(&tune(root, &["init", "--help"]));
+    assert!(help.contains("--narrowed-only"), "{help}");
+}
+
+#[test]
 fn a_dry_run_and_a_limit() {
     let h = history();
     let root = h.dir.path();

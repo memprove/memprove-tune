@@ -19,6 +19,10 @@ use crate::{cli::print, error::Error, experiment::count, scan::counted};
 pub(crate) const INIT_SCHEMA: &str = "tune.init.v1";
 
 /// What `memprove-tune init` was asked to do.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each is one switch of the command line"
+)]
 pub(crate) struct Options {
     /// At most this many tasks.
     pub(crate) limit: usize,
@@ -36,6 +40,9 @@ pub(crate) struct Options {
     pub(crate) setup: Vec<Vec<String>>,
     /// The test command, instead of the guess.
     pub(crate) test: Option<Vec<String>>,
+    /// Pass over a commit whose check cannot be narrowed to the tests it
+    /// changed.
+    pub(crate) narrowed_only: bool,
     /// Say what would be written, and write nothing.
     pub(crate) dry_run: bool,
     /// Print the report as JSON.
@@ -58,13 +65,18 @@ const fn was(count: usize) -> &'static str {
 }
 
 /// What is said when no commit can become a task.
-fn none_found(range: Option<&str>) -> String {
-    let looked = range.map_or_else(
+fn none_found(options: &Options) -> String {
+    let looked = options.range.as_deref().map_or_else(
         || "the history of HEAD".to_owned(),
         |range| format!("the commits of {range}"),
     );
+    let narrowed = if options.narrowed_only {
+        " With --narrowed-only, a commit whose check cannot be narrowed to the tests it changed is passed over too; without it, such a task runs the whole test suite."
+    } else {
+        ""
+    };
     format!(
-        "No commit in {looked} can become a task. A task is made from a commit that is not a merge and changed a test file and other code, in at most {} files and {} lines.\nWrite the task files by hand instead: each is a prompt and a check command (`memprove-tune init --help` shows one).\n",
+        "No commit in {looked} can become a task. A task is made from a commit that is not a merge and changed a test file and other code, in at most {} files and {} lines.{narrowed}\nWrite the task files by hand instead: each is a prompt and a check command (`memprove-tune init --help` shows one).\n",
         history::MAX_FILES,
         history::MAX_LINES,
     )
@@ -73,7 +85,7 @@ fn none_found(range: Option<&str>) -> String {
 /// The report as text for a person.
 fn text(options: &Options, out_dir: &str, tasks: &[MinedTask]) -> String {
     if tasks.is_empty() {
-        return none_found(options.range.as_deref());
+        return none_found(options);
     }
     let of = |wanted: fn(&MineStatus) -> bool| -> Vec<&MinedTask> {
         tasks.iter().filter(|task| wanted(&task.status)).collect()
@@ -204,6 +216,7 @@ pub(crate) fn run(options: &Options, cwd: &Path, out: &mut dyn Write) -> Result<
         spec.setup = Some(options.setup.clone());
     }
     spec.test.clone_from(&options.test);
+    spec.narrowed_only = options.narrowed_only;
     if options.verify && !options.dry_run {
         eprintln!(
             "memprove-tune: running each task's tests before and after its commit; this can take a while"
@@ -248,6 +261,7 @@ mod tests {
             verify: false,
             setup: Vec::new(),
             test: None,
+            narrowed_only: false,
             dry_run: false,
             json: false,
         }

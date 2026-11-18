@@ -141,6 +141,10 @@ onboarding skill) for the public release; `optimize` (v2).
   command with the word `pytest` still gets the changed test files
   appended; any other is every task's check as it is, and a given test
   command needs no project file. `--test` alone keeps the guessed setup.
+- **`--narrowed-only`.** A commit whose check cannot be narrowed (a data
+  file among its tests, or a Node or Make project) becomes a task that
+  runs the whole test suite in every trial. The option passes such
+  commits over, for repositories where that takes minutes.
 - **`--verify` is optional and free of model cost.** It runs setup and
   check in two worktrees per task and keeps a task only when the check
   fails before the commit and passes after it. Without it the report says

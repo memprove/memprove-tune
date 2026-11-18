@@ -50,6 +50,9 @@ pub struct MineSpec {
     /// command with the word `pytest` still gets the test files a commit
     /// changed appended; any other is every task's check as it is.
     pub test: Option<Vec<String>>,
+    /// Pass over a commit whose check cannot be narrowed to the tests it
+    /// changed: such a task runs the whole test suite in every trial.
+    pub narrowed_only: bool,
 }
 
 impl MineSpec {
@@ -66,6 +69,7 @@ impl MineSpec {
             verify: false,
             setup: None,
             test: None,
+            narrowed_only: false,
         }
     }
 }
@@ -135,10 +139,13 @@ pub fn mine(spec: &MineSpec) -> Result<Vec<MinedTask>, EvalError> {
         let id = format!("mined-{}", &commit[..7.min(commit.len())]);
         let task_path = out_dir.join(format!("{id}.json"));
         let patch_path = out_dir.join(format!("{id}.check.patch"));
-        let check = match commands.narrow_as {
-            Some(kind) => narrow::narrow(root, &commit, kind, &commands.check, &candidate.tests),
-            None => commands.check.clone(),
-        };
+        let narrowed = commands.narrow_as.and_then(|kind| {
+            narrow::narrow(root, &commit, kind, &commands.check, &candidate.tests)
+        });
+        if narrowed.is_none() && spec.narrowed_only {
+            continue;
+        }
+        let check = narrowed.unwrap_or_else(|| commands.check.clone());
         let mut mined = MinedTask {
             id: id.clone(),
             commit: commit.clone(),

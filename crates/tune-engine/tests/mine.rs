@@ -522,6 +522,48 @@ fn a_commit_whose_only_test_file_is_documentation_is_passed_over() {
 }
 
 #[test]
+fn narrowed_only_passes_over_a_task_that_would_run_every_test() {
+    let mut repo = Repo::new();
+    repo.write("pyproject.toml", "[project]\nname = \"p\"\n");
+    repo.write("src/p.py", "A = 1\n");
+    repo.commit("init");
+    repo.append("src/p.py", "B = 2\n");
+    repo.write("tests/test_b.py", "def test_b():\n    pass\n");
+    let narrowed = repo.commit("p: B");
+    // A data file among the tests: the check cannot be narrowed to it.
+    repo.append("src/p.py", "C = 3\n");
+    repo.write("tests/test_c.py", "def test_c():\n    pass\n");
+    repo.write("tests/data/c.json", "{}\n");
+    let whole = repo.commit("p: C");
+
+    let all = mine(&MineSpec {
+        dry_run: true,
+        ..MineSpec::new(repo.root())
+    })
+    .expect("all");
+    assert_eq!(ids(&all), [id(&whole), id(&narrowed)]);
+    assert_eq!(all[0].check, ["python3", "-m", "pytest"]);
+
+    let only = mine(&MineSpec {
+        dry_run: true,
+        narrowed_only: true,
+        ..MineSpec::new(repo.root())
+    })
+    .expect("narrowed only");
+    assert_eq!(ids(&only), [id(&narrowed)]);
+
+    // A project whose checks are never narrowed has no such task.
+    let h = history();
+    let none = mine(&MineSpec {
+        dry_run: true,
+        narrowed_only: true,
+        ..MineSpec::new(h.repo.root())
+    })
+    .expect("make");
+    assert!(none.is_empty(), "{none:?}");
+}
+
+#[test]
 fn rust_checks_narrow_to_the_package_and_its_integration_tests() {
     let mut repo = Repo::new();
     repo.write(
