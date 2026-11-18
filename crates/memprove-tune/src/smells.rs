@@ -59,7 +59,9 @@ pub(crate) struct NamedPath {
 /// The repository paths the prose of `text` (a file in `dir`) names in
 /// inline code and links. A word counts as a path only when it has a `/`
 /// and starts with `./`, `../` or a name that exists in `dir` or at the
-/// root: `origin/main` and `application/json` are not paths.
+/// root: `origin/main` and `application/json` are not paths. A path that
+/// is not there from `dir` but is from the root stands for the one at the
+/// root.
 pub(crate) fn named_paths(text: &str, dir: &str, repo: &Repo<'_>) -> Vec<NamedPath> {
     let mut found: Vec<NamedPath> = Vec::new();
     for (index, line) in markdown::lines(text).iter().enumerate() {
@@ -103,17 +105,35 @@ fn as_path(written: &str, dir: &str, repo: &Repo<'_>) -> Option<String> {
     {
         return None;
     }
-    if word.starts_with("./") || word.starts_with("../") {
+    if word.starts_with("../") {
         return resolve(dir, word);
+    }
+    if word.starts_with("./") {
+        return here_or_root(dir, word, repo);
     }
     let first = word.split('/').next().unwrap_or_default();
     if !dir.is_empty() && (repo.exists)(&format!("{dir}/{first}")) {
-        return resolve(dir, word);
+        return here_or_root(dir, word, repo);
     }
     if (repo.exists)(first) {
         return resolve("", word);
     }
     None
+}
+
+/// `word` from `dir`; when nothing is there and the same path from the
+/// repository root exists, that one. A nested file often names what the
+/// agent, who works at the root, should run or read (`./scripts/test` in
+/// a skill), and a path that is there is not reported as gone.
+fn here_or_root(dir: &str, word: &str, repo: &Repo<'_>) -> Option<String> {
+    let here = resolve(dir, word)?;
+    if dir.is_empty() || (repo.exists)(&here) {
+        return Some(here);
+    }
+    match resolve("", word) {
+        Some(root) if (repo.exists)(&root) => Some(root),
+        _ => Some(here),
+    }
 }
 
 /// `word` without a `:line`, `:line:column` or `:line-line` ending.
@@ -892,6 +912,54 @@ mod tests {
                 ("web/src/app.ts", true),
                 ("web/src/gone.ts", false),
                 ("docs/api.md", true)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_path_that_is_there_from_the_root_is_not_missing_in_a_nested_file() {
+        // A skill tells the agent to run `./scripts/test`: a command for the
+        // repository root, where the agent works, not for the skill's
+        // directory.
+        let fake = Fake::new(
+            &[(
+                ".claude/skills/tests/SKILL.md",
+                "Run `./scripts/test` and `./scripts/gone`, with `./notes/own.md` at hand.\nThen `scripts/lint` and `notes/root-only.md`.\n",
+            )],
+            &[
+                ("scripts/test", ""),
+                ("scripts/lint", ""),
+                ("notes/root-only.md", ""),
+                (".claude/skills/tests/notes/own.md", ""),
+            ],
+        );
+        let exists = |path: &str| fake.exists(path);
+        let read = |path: &str| fake.read(path);
+        let repo = Repo {
+            exists: &exists,
+            read: &read,
+        };
+        let named = named_paths(
+            fake.config[".claude/skills/tests/SKILL.md"]
+                .as_text()
+                .expect("text"),
+            ".claude/skills/tests",
+            &repo,
+        );
+        let seen: Vec<(&str, bool)> = named
+            .iter()
+            .map(|named| (named.path.as_str(), named.exists))
+            .collect();
+        assert_eq!(
+            seen,
+            [
+                ("scripts/test", true),
+                (".claude/skills/tests/scripts/gone", false),
+                (".claude/skills/tests/notes/own.md", true),
+                ("scripts/lint", true),
+                // Its first name is in the skill's directory, the file is
+                // only at the root.
+                ("notes/root-only.md", true),
             ]
         );
     }
