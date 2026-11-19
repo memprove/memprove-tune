@@ -23,6 +23,8 @@ pub(super) struct Candidate {
     pub prompt: String,
     /// The test files it changed, relative to the root, `/`-separated.
     pub tests: Vec<String>,
+    /// The files it changed that are neither tests nor documentation.
+    pub sources: Vec<String>,
 }
 
 /// The non-merge commits of `range` (the history of HEAD when `None`),
@@ -66,7 +68,7 @@ pub(super) fn candidate(
     let mut files = 0_usize;
     let mut lines = 0_u64;
     let mut tests = Vec::new();
-    let mut sources = 0_usize;
+    let mut sources = Vec::new();
     for record in numstat.split('\0').filter(|record| !record.is_empty()) {
         let mut fields = record.splitn(3, '\t');
         let added = fields.next().and_then(|field| field.parse::<u64>().ok());
@@ -79,11 +81,11 @@ pub(super) fn candidate(
         if is_test_path(path) {
             tests.push(path.to_owned());
         } else if !is_doc_path(path) {
-            sources += 1;
+            sources.push(path.to_owned());
         }
     }
     if tests.iter().all(|test| is_document(test))
-        || sources == 0
+        || sources.is_empty()
         || files > MAX_FILES
         || lines > MAX_LINES
     {
@@ -108,6 +110,7 @@ pub(super) fn candidate(
         subject,
         prompt,
         tests,
+        sources,
     }))
 }
 

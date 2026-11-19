@@ -1,6 +1,7 @@
 //! `memprove-tune init`: the first task files, from the repository's own history.
 //! A commit that changed a test and code becomes a task: start from its
-//! parent, ask for what its message says, judge by its tests.
+//! parent, ask for what its message (or its pull request) says, judge by
+//! its tests.
 
 use std::{
     fmt::Write as _,
@@ -10,7 +11,7 @@ use std::{
 
 use tune_engine::{
     json::Out,
-    mine::{self, MineSpec, MineStatus, MinedTask, history},
+    mine::{self, MineSpec, MineStatus, MinedTask, PromptFrom, PromptSource, history, pull},
 };
 
 use crate::{cli::print, error::Error, experiment::count, scan::counted};
@@ -43,6 +44,11 @@ pub(crate) struct Options {
     /// Pass over a commit whose check cannot be narrowed to the tests it
     /// changed.
     pub(crate) narrowed_only: bool,
+    /// What the prompts are taken from.
+    pub(crate) prompt_from: PromptFrom,
+    /// Pass over a commit whose tests use names its change brings in and
+    /// its prompt does not give.
+    pub(crate) named_only: bool,
     /// Say what would be written, and write nothing.
     pub(crate) dry_run: bool,
     /// Print the report as JSON.
@@ -56,7 +62,53 @@ const fn status_name(status: &MineStatus) -> &'static str {
         MineStatus::DryRun => "dry_run",
         MineStatus::Exists => "exists",
         MineStatus::Rejected(_) => "rejected",
+        MineStatus::Unnamed(_) => "unnamed",
     }
+}
+
+/// Why a task was not written, when it was not.
+fn reason(status: &MineStatus) -> Option<String> {
+    match status {
+        MineStatus::Rejected(reason) => Some(reason.clone()),
+        MineStatus::Unnamed(names) => Some(format!(
+            "its tests use names that the change brings in and the prompt does not give: {}",
+            names.join(", ")
+        )),
+        MineStatus::Written | MineStatus::DryRun | MineStatus::Exists => None,
+    }
+}
+
+/// What the report says about prompts taken from pull requests, for the
+/// tasks `new`.
+fn prompts_said(new: &[&MinedTask]) -> String {
+    let from_pulls = new
+        .iter()
+        .filter(|task| matches!(task.prompt, Some(PromptSource::PullRequest(_))))
+        .count();
+    let mut out = format!(
+        "Prompts taken from pull requests: {from_pulls} of {}{}\n",
+        counted(new.len(), "task"),
+        if from_pulls == new.len() {
+            "."
+        } else {
+            "; the rest are commit messages."
+        },
+    );
+    let unread: Vec<(u64, &str)> = new
+        .iter()
+        .filter_map(|task| match &task.prompt {
+            Some(PromptSource::Unread { number, error }) => Some((*number, error.as_str())),
+            _ => None,
+        })
+        .collect();
+    if let Some((number, error)) = unread.first() {
+        let _ = writeln!(
+            out,
+            "{} could not be read with gh; the first, #{number}: {error}",
+            counted(unread.len(), "pull request"),
+        );
+    }
+    out
 }
 
 /// `count` of them "was" or "were".
@@ -93,6 +145,7 @@ fn text(options: &Options, out_dir: &str, tasks: &[MinedTask]) -> String {
     let new = of(|status| matches!(status, MineStatus::Written | MineStatus::DryRun));
     let there = of(|status| matches!(status, MineStatus::Exists));
     let refused = of(|status| matches!(status, MineStatus::Rejected(_)));
+    let unnamed = of(|status| matches!(status, MineStatus::Unnamed(_)));
 
     let mut out = format!(
         "{} {} to {out_dir}{}\n",
@@ -112,6 +165,9 @@ fn text(options: &Options, out_dir: &str, tasks: &[MinedTask]) -> String {
             task.title,
             task.check.join(" ")
         );
+    }
+    if options.prompt_from == PromptFrom::PullRequest && !new.is_empty() {
+        out.push_str(&prompts_said(&new));
     }
     if !there.is_empty() {
         let ids: Vec<&str> = there.iter().map(|task| task.id.as_str()).collect();
@@ -141,6 +197,25 @@ fn text(options: &Options, out_dir: &str, tasks: &[MinedTask]) -> String {
             }
         }
     }
+    if !unnamed.is_empty() {
+        let _ = writeln!(
+            out,
+            "{} {} passed over by --named-only: the tests use names that the change brings in and the prompt does not give.",
+            counted(unnamed.len(), "commit"),
+            was(unnamed.len()),
+        );
+        for task in &unnamed {
+            if let MineStatus::Unnamed(names) = &task.status {
+                let _ = writeln!(
+                    out,
+                    "  {}  {}\n      names: {}",
+                    task.id,
+                    task.title,
+                    names.join(", ")
+                );
+            }
+        }
+    }
     if options.dry_run {
         out.push_str("Nothing was written (--dry-run).\n");
         return out;
@@ -150,8 +225,13 @@ fn text(options: &Options, out_dir: &str, tasks: &[MinedTask]) -> String {
             "The tasks were not run. A task whose tests pass before the change, or fail after it, judges nothing: `memprove-tune init --verify` runs each task's tests before and after its commit and keeps the ones that behave.\n",
         );
     }
+    out.push_str(if options.prompt_from == PromptFrom::PullRequest {
+        "Read the prompts before you trust them: each is what a pull request or a commit message says, and it may say too little to do the work from.\n"
+    } else {
+        "Read the prompts before you trust them: each is a commit message, and it may say too little to do the work from.\n"
+    });
     out.push_str(
-        "Read the prompts before you trust them: each is a commit message, and it may say too little to do the work from.\nNext: `memprove-tune scan` lists the units of the configuration, and `memprove-tune prune --dry-run` shows the plan and its cost.\n",
+        "Next: `memprove-tune scan` lists the units of the configuration, and `memprove-tune prune --dry-run` shows the plan and its cost.\n",
     );
     out
 }
@@ -165,19 +245,32 @@ fn json(options: &Options, out_dir: &str, tasks: &[MinedTask]) -> String {
     let listed = tasks
         .iter()
         .map(|task| {
-            let reason = match &task.status {
-                MineStatus::Rejected(reason) => Some(reason.as_str()),
-                _ => None,
-            };
-            Out::Object(vec![
+            let reason = reason(&task.status);
+            let mut members = vec![
                 ("id", Out::str(&task.id)),
                 ("commit", Out::str(&task.commit)),
                 ("path", Out::str(&slashed(&task.path))),
                 ("title", Out::str(&task.title)),
                 ("check", Out::strs(&task.check)),
                 ("status", Out::str(status_name(&task.status))),
-                ("reason", Out::opt(reason, Out::str)),
-            ])
+                ("reason", Out::opt(reason.as_deref(), Out::str)),
+            ];
+            // Where the prompt came from; not known of a task file that
+            // was already there.
+            match &task.prompt {
+                None => {}
+                Some(PromptSource::Commit) => members.push(("prompt_from", Out::str("commit"))),
+                Some(PromptSource::PullRequest(number)) => {
+                    members.push(("prompt_from", Out::str("pull_request")));
+                    members.push(("pull_request", Out::uint(*number)));
+                }
+                Some(PromptSource::Unread { number, error }) => {
+                    members.push(("prompt_from", Out::str("commit")));
+                    members.push(("pull_request", Out::uint(*number)));
+                    members.push(("pull_request_error", Out::str(error)));
+                }
+            }
+            Out::Object(members)
         })
         .collect();
     Out::Object(vec![
@@ -217,6 +310,14 @@ pub(crate) fn run(options: &Options, cwd: &Path, out: &mut dyn Write) -> Result<
     }
     spec.test.clone_from(&options.test);
     spec.narrowed_only = options.narrowed_only;
+    spec.prompt_from = options.prompt_from;
+    spec.named_only = options.named_only;
+    if let Some(gh) = std::env::var(pull::GH_PROGRAM_ENV)
+        .ok()
+        .filter(|gh| !gh.is_empty())
+    {
+        spec.gh = gh;
+    }
     if options.verify && !options.dry_run {
         eprintln!(
             "memprove-tune: running each task's tests before and after its commit; this can take a while"
@@ -249,6 +350,7 @@ mod tests {
             path: Path::new(".tune/tasks").join(format!("{id}.json")),
             title: "lib: add two".to_owned(),
             check: vec!["make".to_owned(), "test".to_owned()],
+            prompt: None,
             status,
         }
     }
@@ -262,6 +364,8 @@ mod tests {
             setup: Vec::new(),
             test: None,
             narrowed_only: false,
+            prompt_from: PromptFrom::Commit,
+            named_only: false,
             dry_run: false,
             json: false,
         }

@@ -3,7 +3,7 @@
 
 use std::{io::Write, path::Path};
 
-use tune_engine::{AgentKind, AgentSpec};
+use tune_engine::{AgentKind, AgentSpec, mine::PromptFrom};
 
 use crate::{
     apply,
@@ -54,10 +54,10 @@ so that `memprove-tune ab` and `memprove-tune prune` have something to
 judge with. It looks at the commits, newest first, and takes each one that
 is not a merge and changed a test file and other code, in at most 20
 files and 600 lines. The task starts from the commit's parent, its prompt
-is the commit message, and its check is the repository's test command,
-narrowed to the tests the commit changed where that can be done. The
-commit's tests are kept as the task's hidden tests: the agent never sees
-them.
+is the commit message (or, with --prompt-from pr, what its pull request
+says), and its check is the repository's test command, narrowed to the
+tests the commit changed where that can be done. The commit's tests are
+kept as the task's hidden tests: the agent never sees them.
 
 Options:
   --limit N                at most N tasks (default 10)
@@ -78,6 +78,20 @@ Options:
   --narrowed-only          pass over a commit whose check cannot be
                            narrowed to the tests it changed: such a task
                            runs the whole test suite in every trial
+  --prompt-from SOURCE     what a task's prompt is: `commit` (default), the
+                           commit message, or `pr`, the title and
+                           description of the pull request the commit's
+                           subject ends with, as in `Fix it (#123)`. A
+                           squash merge leaves a one-line message; the
+                           pull request says what was asked for. It is
+                           read with the GitHub CLI (`gh pr view`, signed
+                           in, from this repository); a commit that names
+                           no pull request, or one that cannot be read,
+                           keeps its commit message
+  --named-only             pass over a commit whose hidden tests use a
+                           name that its change brings in and its prompt
+                           does not give, such as a new function: no
+                           agent can be expected to guess it
   --dry-run                list what would be written and write nothing
   --json                   print the report as JSON
 
@@ -99,7 +113,8 @@ by hand. One holds a prompt and a check command:
 
 Read the prompts of the tasks it writes: a commit message can say too
 little to do the work from, and a task no agent can pass tells nothing
-about the configuration.
+about the configuration. --prompt-from pr and --named-only are there for
+that. TUNE_GH names the GitHub CLI when it is not `gh` on PATH.
 ";
 
 /// What `memprove-tune ab --help` prints.
@@ -472,6 +487,8 @@ fn init_command(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<(), 
         setup: Vec::new(),
         test: None,
         narrowed_only: false,
+        prompt_from: PromptFrom::Commit,
+        named_only: false,
         dry_run: false,
         json: false,
     };
@@ -482,6 +499,18 @@ fn init_command(args: &[String], cwd: &Path, out: &mut dyn Write) -> Result<(), 
             "--setup" => options.setup.push(command(arg, &mut rest)?),
             "--test" => options.test = Some(command(arg, &mut rest)?),
             "--narrowed-only" => options.narrowed_only = true,
+            "--named-only" => options.named_only = true,
+            "--prompt-from" => {
+                options.prompt_from = match value(arg, &mut rest)?.as_str() {
+                    "commit" => PromptFrom::Commit,
+                    "pr" => PromptFrom::PullRequest,
+                    other => {
+                        return Err(Error::Usage(format!(
+                            "--prompt-from takes `commit` or `pr`, not `{other}`"
+                        )));
+                    }
+                };
+            }
             "--limit" => options.limit = number(arg, &mut rest)? as usize,
             "--range" => options.range = Some(value(arg, &mut rest)?),
             "--out" => options.out = Some(value(arg, &mut rest)?.into()),

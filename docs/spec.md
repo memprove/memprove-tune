@@ -145,6 +145,22 @@ onboarding skill) for the public release; `optimize` (v2).
   file among its tests, or a Node or Make project) becomes a task that
   runs the whole test suite in every trial. The option passes such
   commits over, for repositories where that takes minutes.
+- **`--prompt-from pr`.** A squash merge leaves a commit whose message is
+  one line, and a task made from it asks for too little. With the option
+  the prompt is the title and description of the pull request the
+  subject ends with (`Fix it (#123)`), read with the GitHub CLI
+  (`gh pr view 123 --json title,body`, run in the repository; `TUNE_GH`
+  names another program). HTML comments are dropped and a description is
+  cut after 8,000 characters. A commit that names no pull request, or
+  whose pull request cannot be read, keeps its commit message, and the
+  report says how many did. Without `gh` the command stops before it
+  writes anything.
+- **`--named-only`.** Hidden tests often call a function the change
+  introduces. An agent that is not told its name builds the feature under
+  another one and fails. The option passes over a commit when a name is
+  in a line its tests add and in a line its other code adds, in no file
+  of the parent commit, and not in the prompt. Such a commit does not
+  count towards `--limit`; the report lists it with the names.
 - **`--verify` is optional and free of model cost.** It runs setup and
   check in two worktrees per task and keeps a task only when the check
   fails before the commit and passes after it. Without it the report says
@@ -182,9 +198,13 @@ onboarding skill) for the public release; `optimize` (v2).
 - There is no early stop: a unit that is plainly needed still gets all its
   rounds.
 - Token counts are estimates.
-- A mined prompt is a commit message. It can say too little to do the
-  work from, and then no arm passes the task. `init` says so; nothing
-  checks it.
+- A mined prompt is a commit message, or with `--prompt-from pr` what
+  the pull request says. Either can say too little to do the work from,
+  and then no arm passes the task. `init` says so; `--named-only` catches
+  one kind of it (a name the tests need and the prompt lacks), and
+  nothing checks the rest.
+- `--named-only` reads names, not meaning: a word that the tests and the
+  change share by chance (in a comment or a message) also counts.
 - `init` guesses one test command for the repository (Cargo, npm, pytest,
   go, make), or takes one from `--test` (and what a fresh checkout needs
   first from `--setup`). A repository with several test commands needs

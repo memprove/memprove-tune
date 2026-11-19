@@ -1,7 +1,8 @@
 //! `mine`: task files from the repository's own history. A
 //! commit that changed tests and code becomes a task: start from its
-//! parent, ask for what its message says, judge by its tests (applied as
-//! the check patch, so the agent never sees them).
+//! parent, ask for what its message says (or, when asked to, what the pull
+//! request it was merged from says), judge by its tests (applied as the
+//! check patch, so the agent never sees them).
 //!
 //! Commits are looked at newest first; merges, root commits and commits
 //! that [`history::is_test_path`] / [`history::is_doc_path`] and the size
@@ -9,7 +10,9 @@
 //! already exists is never overwritten.
 
 pub mod history;
+mod names;
 mod narrow;
+pub mod pull;
 mod verify;
 
 use std::{
@@ -31,7 +34,40 @@ use crate::{
 /// other commit would be refused for it too, two worktrees each.
 const SETUP_FAILURES_IN_A_ROW: usize = 3;
 
+/// What a mined task's prompt is taken from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PromptFrom {
+    /// The commit message.
+    #[default]
+    Commit,
+    /// The title and description of the pull request the commit's subject
+    /// ends with (`… (#123)`), read with `gh`; the commit message when it
+    /// names none or the pull request cannot be read.
+    PullRequest,
+}
+
+/// Where one task's prompt came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PromptSource {
+    /// The commit message.
+    Commit,
+    /// The title and description of the pull request of this number.
+    PullRequest(u64),
+    /// The commit message, because the pull request its subject names
+    /// could not be read.
+    Unread {
+        /// The pull request's number.
+        number: u64,
+        /// Why it could not be read, in one line.
+        error: String,
+    },
+}
+
 /// What `mine` was asked to do.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each is one switch of the command line"
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MineSpec {
     /// The worktree root.
@@ -59,6 +95,15 @@ pub struct MineSpec {
     /// Pass over a commit whose check cannot be narrowed to the tests it
     /// changed: such a task runs the whole test suite in every trial.
     pub narrowed_only: bool,
+    /// What the prompts are taken from.
+    pub prompt_from: PromptFrom,
+    /// The GitHub CLI that reads pull requests ([`pull::GH_PROGRAM_ENV`]
+    /// names it on the command line).
+    pub gh: String,
+    /// Pass over a commit whose hidden tests use a name that its change
+    /// brings in and its prompt does not give: no agent can be expected to
+    /// guess it.
+    pub named_only: bool,
 }
 
 impl MineSpec {
@@ -76,6 +121,9 @@ impl MineSpec {
             setup: None,
             test: None,
             narrowed_only: false,
+            prompt_from: PromptFrom::Commit,
+            gh: "gh".to_owned(),
+            named_only: false,
         }
     }
 }
@@ -91,6 +139,9 @@ pub enum MineStatus {
     Exists,
     /// `--verify` refused it, for this reason (which names its logs).
     Rejected(String),
+    /// `named_only` passed it over: its hidden tests use these names, which
+    /// its change brings in and its prompt does not give.
+    Unnamed(Vec<String>),
 }
 
 /// One task `mine` found.
@@ -106,8 +157,12 @@ pub struct MinedTask {
     pub title: String,
     /// The check command written into the task.
     pub check: Vec<String>,
-    /// What became of it. Only [`MineStatus::Rejected`] tasks do not count
-    /// towards [`MineSpec::limit`].
+    /// Where its prompt came from; `None` for a task file that was already
+    /// there, which is not read.
+    pub prompt: Option<PromptSource>,
+    /// What became of it. [`MineStatus::Rejected`] and
+    /// [`MineStatus::Unnamed`] tasks do not count towards
+    /// [`MineSpec::limit`].
     pub status: MineStatus,
 }
 
@@ -115,7 +170,8 @@ pub struct MinedTask {
 ///
 /// # Errors
 /// [`EvalError::Usage`] for a `range` that starts with `-`, an absolute
-/// `out_dir` outside the root or a given command without words;
+/// `out_dir` outside the root, a given command without words or, when the
+/// prompts come from pull requests, a `gh` that cannot be started;
 /// [`EvalError::Invalid`] when no test command is given and none can be
 /// guessed (see [`detect::detect`]); [`EvalError::Git`] or
 /// [`EvalError::Io`] when `git` fails or a file cannot be written.
@@ -124,14 +180,39 @@ pub fn mine(spec: &MineSpec) -> Result<Vec<MinedTask>, EvalError> {
     let out_dir = relative_out_dir(root, &spec.out_dir)?;
     let commands = commands(spec)?;
     let commits = history::commits(root, spec.range.as_deref())?;
-    let verifier = spec
-        .verify
+    let from_pulls = spec.prompt_from == PromptFrom::PullRequest;
+    let scratch = (spec.verify || from_pulls)
         .then(|| scratch_dir(root))
-        .transpose()?
+        .transpose()?;
+    let gh = scratch
+        .as_ref()
+        .filter(|_| from_pulls)
+        .map(|scratch| pull::Gh {
+            program: &spec.gh,
+            root,
+            scratch: scratch.clone(),
+        });
+    if let Some(gh) = &gh
+        && let Err(error) = gh.available()
+    {
+        let _ = fs::remove_dir(&gh.scratch);
+        return Err(error);
+    }
+    let verifier = scratch
+        .as_ref()
+        .filter(|_| spec.verify)
         .map(|scratch| verify::Verifier {
             repo_root: root,
-            scratch,
+            scratch: scratch.clone(),
         });
+
+    let maker = Miner {
+        spec,
+        out_dir,
+        commands,
+        gh,
+        verifier,
+    };
 
     let mut found = Vec::new();
     let mut counted = 0;
@@ -143,36 +224,103 @@ pub fn mine(spec: &MineSpec) -> Result<Vec<MinedTask>, EvalError> {
         let Some(candidate) = history::candidate(root, &commit, &parent)? else {
             continue;
         };
+        let Some(mined) = maker.task(&candidate, &mut setup_failures)? else {
+            continue;
+        };
+        if !matches!(
+            mined.status,
+            MineStatus::Rejected(_) | MineStatus::Unnamed(_)
+        ) {
+            counted += 1;
+        }
+        found.push(mined);
+        if setup_failures >= SETUP_FAILURES_IN_A_ROW {
+            break;
+        }
+    }
+    if let Some(verifier) = &maker.verifier {
+        let _ = git(root, &["worktree", "prune"]);
+        let _ = fs::remove_dir_all(verifier.scratch.join("worktrees"));
+    }
+    if let Some(scratch) = &scratch {
+        // Gone when nothing was kept in it.
+        let _ = fs::remove_dir(scratch);
+    }
+    Ok(found)
+}
+
+/// What every candidate of one [`mine`] is made into a task with.
+struct Miner<'a> {
+    spec: &'a MineSpec,
+    /// Where the task files go, relative to the root.
+    out_dir: PathBuf,
+    commands: Commands,
+    /// Reads pull requests, when the prompts come from them.
+    gh: Option<pull::Gh<'a>>,
+    /// Tries each task, when asked to.
+    verifier: Option<verify::Verifier<'a>>,
+}
+
+impl Miner<'_> {
+    /// `candidate` as a task and what became of it: its files are written
+    /// unless its status says otherwise. `None` when its check cannot be
+    /// narrowed and only narrowed tasks are wanted. `setup_failures` is
+    /// that of [`refused`].
+    fn task(
+        &self,
+        candidate: &history::Candidate,
+        setup_failures: &mut usize,
+    ) -> Result<Option<MinedTask>, EvalError> {
+        let spec = self.spec;
+        let root = &spec.repo_root;
+        let commit = &candidate.commit;
         let id = format!("mined-{}", &commit[..7.min(commit.len())]);
-        let task_path = out_dir.join(format!("{id}.json"));
-        let patch_path = out_dir.join(format!("{id}.check.patch"));
-        let narrowed = commands.narrow_as.and_then(|kind| {
-            narrow::narrow(root, &commit, kind, &commands.check, &candidate.tests)
+        let task_path = self.out_dir.join(format!("{id}.json"));
+        let patch_path = self.out_dir.join(format!("{id}.check.patch"));
+        let narrowed = self.commands.narrow_as.and_then(|kind| {
+            narrow::narrow(root, commit, kind, &self.commands.check, &candidate.tests)
         });
         if narrowed.is_none() && spec.narrowed_only {
-            continue;
+            return Ok(None);
         }
-        let check = narrowed.unwrap_or_else(|| commands.check.clone());
+        let check = narrowed.unwrap_or_else(|| self.commands.check.clone());
         let mut mined = MinedTask {
             id: id.clone(),
             commit: commit.clone(),
             path: task_path.clone(),
             title: candidate.subject.clone(),
             check: check.clone(),
+            prompt: None,
             status: MineStatus::Written,
         };
         if root.join(&task_path).exists() {
             mined.status = MineStatus::Exists;
+            return Ok(Some(mined));
+        }
+        let (prompt, source) = prompt_of(self.gh.as_ref(), candidate)?;
+        mined.prompt = Some(source);
+        // The hidden tests are read only when something is done with them.
+        let patch = if spec.named_only || !spec.dry_run {
+            test_patch(root, candidate)?
+        } else {
+            String::new()
+        };
+        let unnamed = if spec.named_only {
+            names::unnamed(root, candidate, &patch, &prompt)?
+        } else {
+            Vec::new()
+        };
+        if !unnamed.is_empty() {
+            mined.status = MineStatus::Unnamed(unnamed);
         } else if spec.dry_run {
             mined.status = MineStatus::DryRun;
         } else {
-            let patch = test_patch(root, &candidate)?;
             let task = Task {
                 id,
                 title: Some(candidate.subject.clone()),
-                base: Some(parent.clone()),
-                prompt: candidate.prompt.clone(),
-                setup: taskfile::setup_commands(&commands.setup),
+                base: Some(candidate.parent.clone()),
+                prompt,
+                setup: taskfile::setup_commands(&self.commands.setup),
                 check: CommandSpec {
                     argv: check,
                     timeout: CHECK_TIMEOUT,
@@ -182,9 +330,8 @@ pub fn mine(spec: &MineSpec) -> Result<Vec<MinedTask>, EvalError> {
                 tags: vec!["mined".to_owned()],
                 source: task_path.clone(),
             };
-            if let Some(verifier) = &verifier
-                && let Some(reason) =
-                    refused(verifier, &task, &commit, &patch, &mut setup_failures)?
+            if let Some(verifier) = &self.verifier
+                && let Some(reason) = refused(verifier, &task, commit, &patch, setup_failures)?
             {
                 mined.status = MineStatus::Rejected(reason);
             }
@@ -193,19 +340,27 @@ pub fn mine(spec: &MineSpec) -> Result<Vec<MinedTask>, EvalError> {
                 write(&root.join(&task_path), &taskfile::render_task(&task))?;
             }
         }
-        if !matches!(mined.status, MineStatus::Rejected(_)) {
-            counted += 1;
-        }
-        found.push(mined);
-        if setup_failures >= SETUP_FAILURES_IN_A_ROW {
-            break;
-        }
+        Ok(Some(mined))
     }
-    if let Some(verifier) = &verifier {
-        let _ = git(root, &["worktree", "prune"]);
-        let _ = fs::remove_dir_all(verifier.scratch.join("worktrees"));
-    }
-    Ok(found)
+}
+
+/// The prompt of `candidate` and where it came from: the pull request its
+/// subject names when `gh` is given and can read it, else the commit
+/// message.
+fn prompt_of(
+    gh: Option<&pull::Gh<'_>>,
+    candidate: &history::Candidate,
+) -> Result<(String, PromptSource), EvalError> {
+    let Some((gh, number)) = gh.zip(pull::number(&candidate.subject)) else {
+        return Ok((candidate.prompt.clone(), PromptSource::Commit));
+    };
+    Ok(match gh.prompt(number)? {
+        Ok(prompt) => (prompt, PromptSource::PullRequest(number)),
+        Err(error) => (
+            candidate.prompt.clone(),
+            PromptSource::Unread { number, error },
+        ),
+    })
 }
 
 /// Verifies the mined `task` (made from `commit`, with the hidden tests
