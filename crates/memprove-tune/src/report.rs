@@ -11,7 +11,7 @@ use tune_engine::{json::Out, runner::dollars};
 
 use crate::{
     experiment::{Arm, Cells, Finished, Role},
-    scan::grouped,
+    scan::{counted, grouped},
     stats::{self, Paired, Verdict},
 };
 
@@ -77,6 +77,44 @@ impl Comparison<'_> {
             Verdict::Inconclusive => "inconclusive",
         })
     }
+}
+
+/// The trials of `cells` that could not be judged, by their tasks, and
+/// by their rounds when there are several.
+fn unjudged(cells: &Cells, rounds: u32) -> Vec<String> {
+    cells
+        .iter()
+        .filter(|(_, cell)| cell.error)
+        .map(|((task, round), _)| {
+            if rounds > 1 {
+                format!("{task} in round {round}")
+            } else {
+                task.clone()
+            }
+        })
+        .collect()
+}
+
+/// The lines that name each arm's trials without a verdict, with an
+/// empty line after them; nothing when every trial has one.
+fn left_out(finished: &Finished<'_>) -> String {
+    let mut out = String::new();
+    for (arm, cells) in finished.arms.iter().zip(finished.cells) {
+        let unjudged = unjudged(cells, finished.rounds);
+        if !unjudged.is_empty() {
+            let _ = writeln!(
+                out,
+                "  {}: {} without a verdict, left out of the pairs (run.json says why): {}",
+                arm.label,
+                counted(unjudged.len(), "trial"),
+                unjudged.join(", ")
+            );
+        }
+    }
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    out
 }
 
 /// The pairs of `other` against `baseline`: the same task in the same
@@ -270,6 +308,7 @@ pub(crate) fn text(finished: &Finished<'_>) -> String {
         );
     }
     out.push('\n');
+    out.push_str(&left_out(finished));
     for comparison in &compared {
         let paired = &comparison.paired;
         let _ = writeln!(
@@ -414,6 +453,25 @@ pub(crate) fn json(finished: &Finished<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_trial_without_a_verdict_is_named_with_its_round_when_there_are_several() {
+        let cell = |error| crate::experiment::Cell {
+            passed: false,
+            error,
+            cost: None,
+            tokens: 0,
+        };
+        let cells: Cells = [
+            (("t1".to_owned(), 1), cell(false)),
+            (("t1".to_owned(), 2), cell(true)),
+            (("t2".to_owned(), 1), cell(true)),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(unjudged(&cells, 2), ["t1 in round 2", "t2 in round 1"]);
+        assert_eq!(unjudged(&cells, 1), ["t1", "t2"]);
+    }
 
     #[test]
     fn a_tiny_chance_is_not_printed_as_zero() {

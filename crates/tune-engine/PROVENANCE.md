@@ -62,6 +62,15 @@ command can say them; and `mine/verify.rs` passes `clear_env: false`, the
 field the environment change above added to `process::Invocation` (setup
 and check commands keep the caller's environment, as in the runner).
 
+## What has changed since
+
+- The mining code has grown with `memprove-tune init` (`git log --
+  crates/tune-engine/src/mine.rs crates/tune-engine/src/mine` lists it).
+- 2026-11-20, `runner.rs` and `model.rs`: a trial whose agent a signal
+  ended before its time limit has the outcome `error` and its check does
+  not run (`AgentEnd::signal`). memprove-eval judges such a trial by its
+  check.
+
 Kept on purpose: `runner::AGENT_CONFIG_ENV` still points `MEMPROVE_CONFIG_DIR`
 at an empty directory for every agent, and `agent::REMOVED_ENV` still lists
 memprove's session variables, so that a repository under test that uses

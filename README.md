@@ -153,6 +153,9 @@ kept, and the same command with a larger cap goes on from there.
   had. The copy has one commit and nothing in it holds the hidden tests or
   the configuration that was replaced.
 - The arms take turns, round by round, so that none always runs first.
+- A trial that could not be run, or whose agent a signal ended before its
+  time limit, has no verdict. It is left out of the pairs, and the report
+  names it.
 - The same task in the same round under two arms is a pair. A variant is
   **worse** or **better** when the pairs that changed sides are too
   one-sided to be chance (exact sign test, 5 %) and more than the control's.

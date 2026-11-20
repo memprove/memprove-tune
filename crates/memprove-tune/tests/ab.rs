@@ -309,6 +309,83 @@ fn a_wider_margin_gives_a_verdict_from_the_same_trials() {
     }
 }
 
+/// As [`AGENT`], but a signal ends it before it starts on the task that
+/// says `slow`, when the configuration holds the useless unit.
+const ENDED_AGENT: &str = r#"
+printf '{"cost_microusd": 500000, "input_tokens": 1, "output_tokens": 10, "turns": 2}' > "$TUNE_USAGE_FILE"
+if grep -qs 'slow' "$TUNE_PROMPT_FILE" && grep -qs 'Useless' CLAUDE.md; then kill -TERM $$; fi
+grep -qs 'write ok' CLAUDE.md && echo ok > answer.txt
+exit 0
+"#;
+
+#[test]
+fn a_trial_whose_agent_a_signal_ended_is_left_out_of_the_pairs_and_named() {
+    let dir = repo(CLAUDE, 3);
+    let root = dir.path();
+    write(root, "agent.sh", ENDED_AGENT);
+    git(
+        root,
+        &["commit", "-q", "-am", "an agent that a signal ends"],
+    );
+    write(
+        root,
+        "evals/t1.json",
+        r#"{"schema": "tune.task.v1", "prompt": "make the check pass, the slow way",
+            "check": {"argv": ["sh", "check.sh"], "timeout_secs": 20}}"#,
+    );
+    let mut args = vec![
+        "ab",
+        "--drop",
+        "CLAUDE.md#useless",
+        "--rounds",
+        "1",
+        "--no-control",
+        "--yes",
+        "--json",
+    ];
+    args.extend(AGENT_ARGS);
+    let output = tune(root, &args);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let value = parse_strict(&stdout(&output)).expect("strict JSON");
+
+    // The baseline's trial on t1 was cut short: it is no failure of the
+    // baseline, so the pair is not one the variant wins.
+    let useless = comparison(&value, "without CLAUDE.md#useless");
+    assert_eq!(
+        (
+            number(useless, "pairs"),
+            number(useless, "both_pass"),
+            number(useless, "only_variant")
+        ),
+        (2, 2, 0)
+    );
+    let baseline = value
+        .get("arms")
+        .and_then(JsonValue::as_array)
+        .expect("arms")
+        .iter()
+        .find(|arm| text(arm, "key") == "baseline")
+        .expect("baseline");
+    assert_eq!(
+        (number(baseline, "trials"), number(baseline, "errors")),
+        (3, 1)
+    );
+
+    let as_text: Vec<&str> = args
+        .iter()
+        .copied()
+        .filter(|arg| *arg != "--json")
+        .collect();
+    let said = stdout(&tune(root, &as_text));
+    assert!(
+        said.contains(
+            "baseline: 1 trial without a verdict, left out of the pairs (run.json says why): t1\n"
+        ),
+        "{said}"
+    );
+    assert!(!said.contains("without CLAUDE.md#useless: "), "{said}");
+}
+
 #[test]
 fn the_budget_stops_the_run_and_a_larger_one_continues_it() {
     let dir = repo(CLAUDE, 2);

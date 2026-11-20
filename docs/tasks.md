@@ -61,6 +61,14 @@ Unknown members are refused, so a typo is found before any trial runs.
 A trial whose setup, patch or start failed is reported as an error and is
 left out of the comparison: it says nothing about the configuration.
 
+So is a trial whose agent a signal ended before its time limit, whether
+the signal is seen as it is or as the exit code a shell gives for it (128
+plus the signal, 143 for `SIGTERM`). The work was cut short by something
+that was not the task, so the check does not run; what the agent left is
+kept in `agent.diff`. The report names these trials. An agent that runs
+past its time limit, or exits non-zero by itself, is judged by the check
+like any other.
+
 ## How many tasks
 
 A unit that matters shows with few pairs: five tasks that all fail without

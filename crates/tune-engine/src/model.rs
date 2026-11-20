@@ -137,6 +137,20 @@ pub enum AgentEnd {
     FailedToStart(String),
 }
 
+impl AgentEnd {
+    /// The signal that ended the agent, when one did and it was not the
+    /// task's time limit: seen as it is, or as the exit code a shell and
+    /// many programs give for it, 128 + the signal.
+    #[must_use]
+    pub const fn signal(&self) -> Option<i32> {
+        match self {
+            Self::Signaled(signal) => Some(*signal),
+            Self::Exited(code) if *code > 128 && *code < 160 => Some(*code - 128),
+            _ => None,
+        }
+    }
+}
+
 /// What one agent run did, as the adapter observed it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentOutcome {
@@ -161,8 +175,9 @@ pub enum Outcome {
     SetupFailed,
     /// The check patch did not apply to what the agent left.
     PatchFailed,
-    /// The trial could not be run: the worktree, the agent's start, or the
-    /// check's start failed. Not the agent's fault; counted as not passed.
+    /// The trial has no verdict: the worktree, the agent's start, or the
+    /// check's start failed, or a signal ended the agent before its time
+    /// limit. It says nothing about the agent; counted as not passed.
     Error,
 }
 

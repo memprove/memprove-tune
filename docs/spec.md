@@ -64,6 +64,15 @@ onboarding skill) for the public release; `optimize` (v2).
   control's. No worse: exact (Clopper-Pearson) 95 % upper bound of "only
   the baseline passed" minus the lower bound of "only the variant passed"
   is at most 10 points. Both are written out in `stats.rs`; no dependency.
+- **A trial cut short has no verdict.** When a signal ends the agent
+  before its time limit (seen as the signal, or as exit code 128 plus the
+  signal), the check does not run and the trial is an error: left out of
+  the pairs whatever it would have been, and named in the report. Counting
+  it as failed, as the engine did until 2026-11-20, put three trials of
+  the validation runs on the wrong side. The rule
+  does not look at what the agent had done, so it cannot favour an arm.
+  An agent past its time limit, or one that exits non-zero by itself, is
+  judged by the check as before.
 - **Continuing.** The experiment's name is a hash of the arms'
   configuration, the task files and the agent. The same command finds the
   same experiment, skips finished arm-rounds and adds what is missing.
@@ -197,6 +206,8 @@ onboarding skill) for the public release; `optimize` (v2).
   baseline runs again for the check.
 - There is no early stop: a unit that is plainly needed still gets all its
   rounds.
+- A trial without a verdict is not run again: continuing an experiment
+  adds rounds, it does not repeat single trials.
 - Token counts are estimates.
 - A mined prompt is a commit message, or with `--prompt-from pr` what
   the pull request says. Either can say too little to do the work from,

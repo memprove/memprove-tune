@@ -23,6 +23,10 @@
   (`verdicts` in `tune.scan.v1`).
 - `--margin POINTS` for `ab` and `prune`: how much lower the pass rate may
   truly be and still count as no worse.
+- Changed: a trial whose agent a signal ended before its time limit (seen
+  as the signal, or as exit code 128 plus the signal) has no verdict. Its
+  check does not run, it is left out of the pairs, and the report of `ab`
+  names it. It used to count as failed when its check failed.
 - Fixed: run from a subdirectory, `memprove-tune ab` named the experiment without
   the content of the task files, so a changed task continued the old
   experiment.

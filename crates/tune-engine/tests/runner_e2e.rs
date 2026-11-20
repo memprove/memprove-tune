@@ -292,6 +292,112 @@ fn every_outcome_is_judged_by_the_check_alone() {
     files_and_cleanup(root, out.path(), &run, &run_dir);
 }
 
+/// The suite of the tasks `ids` of `root`.
+fn suite_of(root: &Path, ids: &[&str]) -> Vec<(tune_engine::Task, tune_engine::TaskRef)> {
+    let paths: Vec<PathBuf> = ids
+        .iter()
+        .map(|id| PathBuf::from(format!("evals/{id}.json")))
+        .collect();
+    task::load_suite(root, &paths).expect("suite")
+}
+
+#[test]
+fn a_trial_whose_agent_was_ended_by_a_signal_has_no_verdict() {
+    let repo = repository();
+    let root = repo.path();
+    let out = tempfile::tempdir().expect("out");
+    // Ended with the work half done, and ended after the work was done by
+    // a program that reports the signal as a shell does: 128 + the signal.
+    task_file(
+        root,
+        "j-signaled",
+        &format!(r#""prompt": "echo partial > answer.txt; kill -TERM $$", {CHECK}"#),
+    );
+    task_file(
+        root,
+        "k-exits-143",
+        &format!(r#""prompt": "echo ok > answer.txt; exit 143", {CHECK}"#),
+    );
+    let suite = suite_of(root, &["j-signaled", "k-exits-143"]);
+    let (run, run_dir) =
+        runner::run_suite(&options(root, out.path(), 1, 2), &suite, &ScriptAgent).expect("runs");
+
+    for (id, end, reason, left) in [
+        (
+            "j-signaled",
+            AgentEnd::Signaled(15),
+            "the agent was ended by signal 15; the trial has no verdict",
+            "+partial",
+        ),
+        (
+            "k-exits-143",
+            AgentEnd::Exited(143),
+            "the agent exited with code 143, as a program ended by signal 15 does; the trial has no verdict",
+            "+ok",
+        ),
+    ] {
+        let result = run
+            .results
+            .iter()
+            .find(|result| result.task == id)
+            .expect("result");
+        assert_eq!(result.outcome, Outcome::Error, "{id}");
+        assert_eq!(result.reason.as_deref(), Some(reason), "{id}");
+        assert_eq!(result.agent.as_ref().map(|agent| &agent.end), Some(&end));
+        // The check did not run; what the agent left is kept to look at.
+        assert_eq!(result.check_exit, None, "{id}");
+        let logs = run_dir.join(&result.logs);
+        assert!(!logs.join("check.out").exists(), "{id}");
+        assert!(
+            fs::read_to_string(logs.join("agent.diff"))
+                .expect("diff")
+                .contains(left),
+            "{id}"
+        );
+    }
+    let summary = run.summary();
+    assert_eq!((summary.passed, summary.trials, summary.errors), (0, 2, 2));
+}
+
+#[test]
+fn an_agent_that_exits_non_zero_by_itself_is_judged_by_the_check() {
+    let repo = repository();
+    let root = repo.path();
+    let out = tempfile::tempdir().expect("out");
+    task_file(
+        root,
+        "l-exits-3",
+        &format!(r#""prompt": "echo ok > answer.txt; exit 3", {CHECK}"#),
+    );
+    // 128 is no signal's code, and 160 is past the last signal's.
+    task_file(
+        root,
+        "m-exits-128",
+        &format!(r#""prompt": "echo ok > answer.txt; exit 128", {CHECK}"#),
+    );
+    task_file(
+        root,
+        "n-exits-160",
+        &format!(r#""prompt": "echo no > answer.txt; exit 160", {CHECK}"#),
+    );
+    let suite = suite_of(root, &["l-exits-3", "m-exits-128", "n-exits-160"]);
+    let (run, _) =
+        runner::run_suite(&options(root, out.path(), 1, 3), &suite, &ScriptAgent).expect("runs");
+    let outcomes: Vec<(&str, Outcome)> = run
+        .results
+        .iter()
+        .map(|result| (result.task.as_str(), result.outcome))
+        .collect();
+    assert_eq!(
+        outcomes,
+        [
+            ("l-exits-3", Outcome::Passed),
+            ("m-exits-128", Outcome::Passed),
+            ("n-exits-160", Outcome::Failed),
+        ]
+    );
+}
+
 #[test]
 fn trials_repeat_each_task_in_order() {
     let repo = repository();

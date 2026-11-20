@@ -362,6 +362,12 @@ fn in_worktree(
     if let AgentEnd::FailedToStart(detail) = &outcome.end {
         result.reason = Some(format!("the agent could not be started: {detail}"));
     }
+    let ended_by_signal = outcome.end.signal().map(|signal| match outcome.end {
+        AgentEnd::Exited(code) => {
+            format!("the agent exited with code {code}, as a program ended by signal {signal} does")
+        }
+        _ => format!("the agent was ended by signal {signal}"),
+    });
     result.agent = Some(outcome);
     if failed_to_start {
         return;
@@ -372,6 +378,12 @@ fn in_worktree(
             result.reason = Some(format!("cannot diff the agent's changes: {error}"));
             return;
         }
+    }
+    // Whatever ended the agent, it was not the task: the check would judge
+    // work that was cut short, so the trial is left without a verdict.
+    if let Some(ended) = ended_by_signal {
+        result.reason = Some(format!("{ended}; the trial has no verdict"));
+        return;
     }
     if let Some(patch) = &task.check_patch
         && let Err(error) = tree.restore_and_apply(&context.options.repo_root.join(patch))
