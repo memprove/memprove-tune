@@ -20,8 +20,11 @@ lets your own tests decide.
 - **Nothing leaves your machine** except what your agent itself sends.
 
 Status: early. `scan`, `init`, `ab` and `prune` work and are tested with
-scripted agents; the agent supported for real runs is Claude Code, and no
-real run has been made yet.
+scripted agents; the agent supported for real runs is Claude Code. With
+it, `ab` has been run on tasks that `init` mined from three public
+repositories, and `prune` has not been run yet:
+[docs/validation.md](docs/validation.md) has every run, what it found and
+what it does not show.
 
 ## Build
 
@@ -175,6 +178,9 @@ ENOUGH EVIDENCE.
   agent, which is how the tests work.
 - A verdict holds for the tasks, the agent version and the model it was
   measured with. It does not carry over to others.
+- A verdict costs real runs. Comparing a whole configuration with none
+  took 88 to 90 tasks, $84 to $93 and three to eight hours a repository
+  in our runs, and `prune` runs one such arm for every unit.
 - Token counts are estimates (about four characters to a token).
 - "Removable" means "no measurable loss on these tasks", not "useless
   everywhere": tasks that never touch what a unit is about cannot show its

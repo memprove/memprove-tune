@@ -69,10 +69,12 @@ onboarding skill) for the public release; `optimize` (v2).
   signal), the check does not run and the trial is an error: left out of
   the pairs whatever it would have been, and named in the report. Counting
   it as failed, as the engine did until 2026-11-20, put three trials of
-  the validation runs on the wrong side. The rule
-  does not look at what the agent had done, so it cannot favour an arm.
-  An agent past its time limit, or one that exits non-zero by itself, is
-  judged by the check as before.
+  the validation runs among the failures (`docs/validation.md`). The rule
+  does not look at what the agent had done, so a cut-short trial is not
+  kept only when it happens to pass. A configuration that makes the agent
+  crash would lose those trials from its pairs; naming them in the report
+  is what shows it. An agent past its time limit, or one that exits
+  non-zero by itself, is judged by the check as before.
 - **Continuing.** The experiment's name is a hash of the arms'
   configuration, the task files and the agent. The same command finds the
   same experiment, skips finished arm-rounds and adds what is missing.
@@ -183,8 +185,9 @@ onboarding skill) for the public release; `optimize` (v2).
 ## Known limits
 
 - Claude Code only for real runs; Codex and MCP servers as units are v2.
-- No real agent has been run yet. Everything is tested with agents that
-  are shell scripts.
+- The tests use agents that are shell scripts. With Claude Code, `ab` has
+  been run on tasks that `init` mined from three public repositories, and
+  `prune` on none (`docs/validation.md`).
 - Units of an `AGENTS.md` that no `CLAUDE.md` imports can be dropped, but
   Claude Code never read them, so the experiment will show no difference.
   `scan` says so (`not-read`).
