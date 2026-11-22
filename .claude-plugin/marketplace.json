@@ -1,0 +1,17 @@
+{
+  "name": "memprove-tune",
+  "owner": {
+    "name": "memprove",
+    "url": "https://memprove.dev"
+  },
+  "description": "The memprove-tune plugin: your coding agent installs memprove-tune and gets a repository ready for it.",
+  "plugins": [
+    {
+      "name": "memprove-tune",
+      "source": "./plugins/memprove-tune",
+      "description": "Lets your coding agent install memprove-tune and get a repository ready for it: the units of your agent configuration and their cost, the first tasks from your history, and the plan of an experiment. It runs no experiment unless you ask.",
+      "category": "development",
+      "tags": ["agent-config", "experiments", "evals"]
+    }
+  ]
+}
