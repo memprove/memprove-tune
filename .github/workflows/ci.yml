@@ -52,3 +52,18 @@ jobs:
 
       - name: Test
         run: cargo test --workspace --locked
+
+  # scripts/install.sh, offline: fake releases and a fake curl. shellcheck is
+  # on the runner and the test runs it first. The installer is tried under
+  # dash (Ubuntu's sh) and under bash (macOS's sh is a bash).
+  installer:
+    name: installer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test the installer under sh
+        run: bash scripts/test-install.sh
+
+      - name: Test the installer under bash
+        run: INSTALLER_SH=bash bash scripts/test-install.sh
