@@ -29,6 +29,17 @@
   names it. It used to count as failed when its check failed.
 - `docs/validation.md`: every run with a real agent, what it found and
   what it does not show.
+- `scripts/install.sh`, the one-line installer
+  (`curl -fsSL https://memprove.dev/tune/install.sh | sh`): it takes the
+  release archive for the machine, checks its SHA-256 and that the binary
+  says the version asked for, and installs the one file at
+  `~/.memprove-tune/bin/memprove-tune`. `--prefix`, `--write-profile`,
+  `MEMPROVE_TUNE_VERSION`. Its tests are `scripts/test-install.sh`.
+- `.github/workflows/release.yml`: a tag `v*` builds the archives for
+  macOS on Apple silicon and Linux x86_64, installs each on its runner
+  with the installer (`scripts/check-release-archive.sh`) and attaches
+  them, each with its `.sha256`, to the tag's GitHub Release.
+- `CONTRIBUTING.md`, and an Install section in the README.
 - Fixed: run from a subdirectory, `memprove-tune ab` named the experiment without
   the content of the task files, so a changed task continued the old
   experiment.
