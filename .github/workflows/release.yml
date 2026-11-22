@@ -1,0 +1,103 @@
+# memprove-tune release: build the release binary on GitHub's runners and
+# attach it, as one archive per platform with its SHA-256, to the GitHub
+# Release of a tag. It runs for a pushed tag v*, or by hand for an existing
+# tag (workflow_dispatch with `tag`). The Release has to exist before the
+# archives are attached: create it as a draft first, publish it after.
+# scripts/install.sh installs from these archives.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "the existing tag whose Release gets the archives, such as v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  # The Rust the tests run with (see ci.yml); it wins over rust-toolchain.toml.
+  RUSTUP_TOOLCHAIN: 1.96.0
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu 22.04 (glibc 2.35) so that the Linux binary runs on
+          # distributions from 2022 on; scripts/install.sh checks for it.
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install Rust 1.96.0
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.96.0
+
+      - name: The tag names the version in Cargo.toml
+        run: |
+          version="${TAG#v}"
+          grep -qxF "version = \"$version\"" Cargo.toml || {
+            echo "the tag is $TAG, and Cargo.toml does not say version = \"$version\""
+            exit 1
+          }
+
+      - name: The runner is the target
+        run: |
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          [ "$host" = "${{ matrix.target }}" ] || { echo "this runner builds $host, not ${{ matrix.target }}"; exit 1; }
+
+      - name: Build
+        run: cargo build --release --locked -p memprove-tune
+
+      - name: Package
+        run: |
+          version="${TAG#v}"
+          name="memprove-tune-${version}-${{ matrix.target }}"
+          mkdir -p "$name/bin" "$name/docs"
+          cp target/release/memprove-tune "$name/bin/"
+          cp docs/*.md "$name/docs/"
+          cp README.md LICENSE CHANGELOG.md "$name/"
+          tar -czf "$name.tar.gz" "$name"
+          shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
+          cat "$name.tar.gz.sha256"
+          echo "ARCHIVE=$name" >> "$GITHUB_ENV"
+
+      - name: Run the binary from the archive
+        run: |
+          check="$(mktemp -d)"
+          tar -xzf "$ARCHIVE.tar.gz" -C "$check"
+          bin="$check/$ARCHIVE/bin/memprove-tune"
+          said="$("$bin" --version)"
+          [ "$said" = "memprove-tune ${TAG#v}" ] || { echo "the binary says '$said'"; exit 1; }
+          mkdir "$check/repo"
+          cd "$check/repo"
+          git init --quiet
+          printf '## Notes\n\nRun the tests with `make test`.\n' > CLAUDE.md
+          "$bin" scan
+
+      # The installer itself, on this runner, with only its download
+      # replaced: the archive is on no Release yet, and a draft Release's
+      # files cannot be downloaded without a login.
+      - name: Install the archive with the installer
+        run: sh scripts/check-release-archive.sh "${TAG#v}" "$ARCHIVE.tar.gz"
+
+      - name: Attach to the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$ARCHIVE.tar.gz" "$ARCHIVE.tar.gz.sha256" --clobber --repo "${{ github.repository }}"
