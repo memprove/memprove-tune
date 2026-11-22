@@ -54,6 +54,14 @@ In a checkout, `cargo build --release` builds
 [CONTRIBUTING.md](CONTRIBUTING.md) has the commands a change is checked
 with.
 
+Or let your coding agent do it. With the plugin
+(`/plugin install memprove-tune --marketplace memprove/memprove-tune` in
+Claude Code; [plugins/memprove-tune/README.md](plugins/memprove-tune/README.md)
+has Codex, Cursor and other agents), say "Set up memprove-tune in this
+repository." The agent installs the tool, lists your configuration, writes
+the first tasks and shows the plan of an experiment. It runs no experiment
+unless you ask.
+
 ## Look before you run anything
 
 ```console

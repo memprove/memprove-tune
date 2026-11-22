@@ -40,6 +40,11 @@
   with the installer (`scripts/check-release-archive.sh`) and attaches
   them, each with its `.sha256`, to the tag's GitHub Release.
 - `CONTRIBUTING.md`, and an Install section in the README.
+- The memprove-tune plugin for coding agents (`plugins/memprove-tune`),
+  with one skill, `memprove-tune-setup`: asked to set memprove-tune up,
+  the agent installs it, runs `scan`, `init --verify` and
+  `prune --dry-run`, and reports. It starts no experiment unless asked.
+  Manifests for Claude Code, Codex and Cursor.
 - Fixed: run from a subdirectory, `memprove-tune ab` named the experiment without
   the content of the task files, so a changed task continued the old
   experiment.

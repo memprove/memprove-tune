@@ -1,0 +1,13 @@
+{
+  "name": "memprove-tune",
+  "displayName": "memprove-tune",
+  "description": "Lets your coding agent install memprove-tune and get a repository ready for it: the units of your agent configuration and their cost, the first tasks from your history, and the plan of an experiment. It runs no experiment unless you ask.",
+  "author": {
+    "name": "memprove"
+  },
+  "homepage": "https://memprove.dev/tune/",
+  "repository": "https://github.com/memprove/memprove-tune",
+  "license": "Apache-2.0",
+  "keywords": ["agent-config", "claude-md", "experiments", "evals", "setup"],
+  "skills": "./skills/"
+}
