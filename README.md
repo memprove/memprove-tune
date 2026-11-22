@@ -26,12 +26,33 @@ repositories, and `prune` has not been run yet:
 [docs/validation.md](docs/validation.md) has every run, what it found and
 what it does not show.
 
-## Build
+## Install
 
 ```sh
-cargo build --release      # Rust 1.96.0, see rust-toolchain.toml
-./target/release/memprove-tune --help
+curl -fsSL https://memprove.dev/tune/install.sh | sh
 ```
+
+The installer takes the release archive for your machine (macOS on Apple
+silicon, or Linux x86_64 with glibc 2.35 or later) from the
+[releases page](https://github.com/memprove/memprove-tune/releases), stops
+unless its SHA-256 matches, checks that the binary runs and says the
+version that was asked for, and puts that one file at
+`~/.memprove-tune/bin/memprove-tune`. There is no daemon and no
+configuration. It prints the line that puts the directory on `PATH`;
+with `sh -s -- --write-profile` it writes that line into your shell
+profile, and `--prefix <DIR>` installs somewhere else. To remove
+memprove-tune, delete the directory.
+
+On any other platform, or to build it yourself (Rust 1.89 or later):
+
+```sh
+cargo install --locked --git https://github.com/memprove/memprove-tune memprove-tune
+```
+
+In a checkout, `cargo build --release` builds
+`target/release/memprove-tune` with the Rust in `rust-toolchain.toml`.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the commands a change is checked
+with.
 
 ## Look before you run anything
 
