@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 (2026-11-24)
+
+The first release.
 
 - The product is called `memprove-tune`, and so are the package and the
   command. It stays a tool of its own: no memprove crate, no memprove
