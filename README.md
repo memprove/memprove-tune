@@ -22,7 +22,8 @@ lets your own tests decide.
 Status: early. `scan`, `init`, `ab` and `prune` work and are tested with
 scripted agents; the agent supported for real runs is Claude Code. With
 it, `ab` has been run on tasks that `init` mined from three public
-repositories, and `prune` has not been run yet:
+repositories, and `prune` on a small made-up repository with one planted
+fact, where it kept that section and removed the other three:
 [docs/validation.md](docs/validation.md) has every run, what it found and
 what it does not show.
 

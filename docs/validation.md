@@ -1,12 +1,13 @@
 # What has been measured
 
 This page lists every run of `memprove-tune` with a real agent, what each
-one found, and what it does not show. Last changed 2026-11-20.
+one found, and what it does not show. Last changed 2026-11-24.
 
 All runs used Claude Code 2.1.310 with the model `claude-opus-5-5` on one
 laptop (macOS, arm64). Dollar figures are usage as Claude Code reports it,
 at API prices. Runs 2 and 3 ran three trials at a time, and each trial was
-stopped by Claude Code at $1.50 and by the tool at 30 minutes.
+stopped by Claude Code at $1.50 and by the tool at 30 minutes. Run 4 ran
+three at a time with a stop at $0.50.
 
 ## In short
 
@@ -19,7 +20,10 @@ stopped by Claude Code at $1.50 and by the tool at 30 minutes.
   configuration show a benefit.
 - Sessions without the configuration cost 8 to 12 % less a trial.
 - A verdict on a whole configuration took $84 to $93 and three to eight
-  hours a repository. Unit by unit, as `prune` does it, has not been run
+  hours a repository.
+- `prune`, run unit by unit on the planted-fact repository, kept the one
+  section a task needs, marked the other three removable and wrote a patch
+  that leaves only that section: 200 trials, $21.99. It has not been run
   on a real repository yet.
 
 ## Run 1: a planted fact (2026-11-17 and 11-18)
@@ -124,6 +128,56 @@ verdicts; python-sdk had no such trial and is 5 points inside the margin.
 One more trial, in the arm without configuration, reached the 30-minute
 limit with no output. It counts as failed in every reading.
 
+## Run 4: `prune` on the planted fact (2026-11-24)
+
+The `parcelpost` repository of run 1, with its `CLAUDE.md` written as four
+sections. Only `## Ports` holds something a task needs and the code does
+not say; the other three repeat what the code and its tests already show.
+
+| Unit | Tokens |
+|---|---|
+| `CLAUDE.md#tests` | 24 |
+| `CLAUDE.md#money` | 40 |
+| `CLAUDE.md#limits` | 31 |
+| `CLAUDE.md#ports` | 34 |
+
+`memprove-tune prune` held out one of the four tasks (`free-shipping-faq`)
+and ran the search on the other three: baseline, control and one arm
+without each unit, ten rounds, 180 trials, $19.84.
+
+| Arm | Passed | Cost a trial |
+|---|---|---|
+| baseline | 30/30 | $0.11 |
+| control | 30/30 | $0.11 |
+| without `#money` | 30/30 | $0.11 |
+| without `#ports` | 20/30 | $0.11 |
+| without `#limits` | 30/30 | $0.11 |
+| without `#tests` | 30/30 | $0.12 |
+
+- `#ports`: **KEEP**. Without it the `port` task failed in all ten rounds
+  and nothing else changed (10 of 30 pairs against the arm, none for it;
+  p = 0.001).
+- `#money`, `#limits`, `#tests`: **REMOVABLE**. All 30 pairs passed on
+  both sides, so the pass rate is at most 9.5 points lower with 95 %
+  confidence.
+- The control differed from the baseline in 0 of 30 pairs.
+
+Then the three removable units were dropped together and checked against
+the baseline on the held-out task, ten rounds, 20 trials, $2.15: both
+passed 10 of 10. With ten pairs that comparison cannot show "no worse"
+within 10 points (its bound is 25.9 points), so it is a check that the
+pruned configuration still works, not a verdict. The patch the tool wrote
+removes the three sections and keeps `## Ports`, about 95 fewer tokens in
+every session.
+
+In all 200 trials, $21.99, 21 minutes. No trial reached the $0.50 stop or
+the time limit.
+
+What it shows: unit by unit, the tool keeps the unit that matters and lets
+go of the ones that do not, and the patch is what a person would write.
+What it does not: the repository is made up and the effect was put there
+on purpose, as in run 1.
+
 ## What these runs do not show
 
 - **Only what tests measure.** A configuration's rules on style, commit
@@ -137,8 +191,9 @@ limit with no output. It counts as failed in every reading.
 - **One agent and one model.**
 - **Three repositories that we picked**, all Python libraries with a
   `CLAUDE.md` or `AGENTS.md`. They are not a sample of anything.
-- **Whole configurations only.** Whether a single section or skill earns
-  its place in a real repository has not been tested.
+- **Units only on a made-up repository.** `prune` has been run on the
+  planted fact of run 4. Whether a single section or skill earns its place
+  in a real repository has not been tested.
 
 ## Where the records are
 
