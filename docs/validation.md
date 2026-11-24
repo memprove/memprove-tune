@@ -132,7 +132,7 @@ limit with no output. It counts as failed in every reading.
 
 The `parcelpost` repository of run 1, with its `CLAUDE.md` written as four
 sections. Only `## Ports` holds something a task needs and the code does
-not say; the other three repeat what the code and its tests already show.
+not say.
 
 | Unit | Tokens |
 |---|---|
